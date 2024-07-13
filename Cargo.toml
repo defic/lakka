@@ -1,0 +1,13 @@
+workspace.members = [ "pakka_core", "pakka_macro"]
+[package]
+name = "pakka"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pakka_macro = { path = "pakka_macro" }
+tokio = { features = ["full"]}
+
+[lib]
