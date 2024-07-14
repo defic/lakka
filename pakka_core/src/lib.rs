@@ -88,7 +88,7 @@ pub fn actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         */
 
 
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct #handle_name #full_generics {
             sender: tokio::sync::mpsc::Sender<#message_enum_name #ty_generics>,
         }
@@ -166,6 +166,12 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             
             let (variant_fields, handler_args, handle_args) = args_to_fields_and_args(args);
 
+            let async_code = if method.sig.asyncness.is_some() {
+                quote! { .await }
+            } else {
+                quote! {}
+            };
+
             match return_type {
                 syn::ReturnType::Default => {
                     message_variants.extend(quote! {
@@ -174,7 +180,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
                     message_handlers.extend(quote! {
                         #message_enum_name::#variant_name(#handler_args) => {
-                            self.#method_name(#handler_args);
+                            self.#method_name(#handler_args)#async_code;
                         },
                     });
 
@@ -191,7 +197,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
                     message_handlers.extend(quote! {
                         #message_enum_name::#variant_name(#handler_args resp) => {
-                            let result = self.#method_name(#handler_args);
+                            let result = self.#method_name(#handler_args)#async_code;
                             let _ = resp.send(result);
                         },
                     });
@@ -221,14 +227,14 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 
                 tokio::spawn(async move {
                     while let Some(msg) = rx.recv().await {
-                        self.handle_message(msg);
+                        self.handle_message(msg).await;
                     }
                 });
 
                 #handle_name { sender: tx }
             }
 
-            pub fn handle_message(&mut self, msg: #message_enum_name #ty_generics) {
+            async fn handle_message(&mut self, msg: #message_enum_name #ty_generics) {
                 match msg {
                     #message_handlers
                 }

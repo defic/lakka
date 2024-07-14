@@ -4,54 +4,57 @@ use pakka::{actor, messages};
 
 #[actor]
 #[derive(Default)]
-struct GameLobby {
-    number: u32,
-    players: Vec<String>,
+struct SimpleTest {
+    counter: u32,
+    last_value: String,
 }
 
 #[messages]
-impl GameLobby {
+impl SimpleTest {
 
     pub fn new() -> Self {
-        GameLobby::default()
+        SimpleTest::default()
     }
 
-    fn calculation(&mut self, number: u32) -> u32{
-        self.number = Self::do_calculation(self.number, number);
-        self.number
+    fn last_value(&self) -> String {
+        self.last_value.clone()
     }
 
-    fn do_calculation(n1: u32, n2: u32) -> u32 {
-        n1 * n2
+    async fn last_value_async(&self) -> String {
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        self.last_value.clone()
     }
 
-    fn add_player(&mut self, player: String) {
-        println!("Adding player: {}", player);
-        self.players.push(player);
+    fn set_last_value(&mut self, value: String) {
+        self.counter += 1;
+        self.last_value = value;
     }
 
-    fn get_player_list(&self) -> Vec<String> {
-        self.players.clone()
+    async fn set_last_value_async(&mut self, value: String) {
+        self.counter += 1;
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        self.last_value = value;
+    }
+
+    fn print(&self) {
+        println!("actor print: {}, altered: {} times", self.last_value, self.counter)
     }
 }
 
 
 #[tokio::main]
 async fn main() {
-    let asd = GameLobby::new();
-    let handle = asd.run();
-    handle.calculation(1).await;
-    handle.calculation(3).await;
-    handle.calculation(3).await;
-    handle.calculation(3).await;
 
-    let players = handle.get_player_list().await;
-    println!("players {:?}", players);
-
-    handle.add_player("jeps".into()).await;
-    handle.add_player("jups".into()).await;
-    let players = handle.get_player_list().await;
-    println!("updated players: {:?}", players);
+    let asd = SimpleTest::new().run();
+    asd.set_last_value("innit".into()).await;
+    asd.print().await;
+    asd.set_last_value("monkey".into()).await;
+    asd.set_last_value_async("bononoke".into()).await;
+    println!("Got last value: {}", asd.last_value().await);
+    asd.set_last_value("monkey".into()).await;
+    asd.set_last_value("donkey".into()).await;
+    asd.print().await;
+    _ = asd;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
