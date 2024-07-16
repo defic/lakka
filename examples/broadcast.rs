@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use pakka::{actor, messages};
+use pakka::messages;
 
-#[actor]
+
 struct Broadcaster {
     amount_created: u32,
     broadcast_sender: tokio::sync::broadcast::Sender<BroadcastListenerTellMessage>,
@@ -31,7 +31,6 @@ impl Broadcaster {
     }
 }
 
-#[actor]
 struct BroadcastListener {
 }
 

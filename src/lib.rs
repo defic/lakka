@@ -1,2 +1,2 @@
 
-pub use pakka_macro::{actor, messages};
+pub use pakka_macro::{messages};

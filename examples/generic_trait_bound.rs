@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem;
 use std::time::Duration;
-use pakka::{actor, messages};
+use pakka::messages;
 
 
 pub trait Game: fmt::Debug + 'static + Send + Sync + Clone {
@@ -10,7 +10,7 @@ pub trait Game: fmt::Debug + 'static + Send + Sync + Clone {
     fn update(&mut self, inputs: Vec::<Self::Input>);
 }
 
-#[actor]
+//#[actor]
 #[derive(Default)]
 struct Lobby<T: Game> {
     game: T,

@@ -21,82 +21,6 @@ fn to_pascal_case(s: &str) -> String {
     pascal
 }
 
-pub fn actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = match syn::parse2::<ItemStruct>(item) {
-        Ok(ast) => ast,
-        Err(e) => {
-            let error = syn::Error::new(
-                proc_macro2::Span::call_site(),
-                format!("Error with parsing macro: {e}")
-            );
-            eprintln!("Error: {}", error);
-            return error.to_compile_error();
-        }
-    };
-
-    /* new field 
-    let new_field: Field = syn::parse_quote! {
-        pub new_member: String
-    };
-
-    
-    if let syn::Fields::Named(ref mut fields) = input.fields {
-        fields.named.push(new_field);
-    } else {
-        let error = syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "Only named structs can be actors"
-        );
-        eprintln!("Error: {}", error);
-        return error.to_compile_error();
-    }
-    */
-
-    //let input = parse_macro_input!(item as DeriveInput);
-    let name = &input.ident;
-    let generics = &input.generics;
-    let (_, ty_generics, _) = generics.split_for_impl();
-    let full_generics = &input.generics;
-    //input.fields
-
-    let actor_enum_name = format_ident!("{}Message", name);
-    let handle_name = format_ident!("{}Handle", name);
-
-
-    /* 
-    // Ensure we're dealing with a struct
-    match input.data {
-        Data::Struct(_) => {},
-        _ => {
-            let error = syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "The actor attribute can only be applied to structs"
-            );
-            eprintln!("Error: {}", error);
-            return error.to_compile_error();
-        }
-    }
-    */
-
-    let expanded = quote! {
-        #input
-
-        /* TODO: Implement actor trait?
-        impl #full_generics Actor for #name {
-        
-        }
-        */
-
-
-        #[derive(Clone, Debug)]
-        pub struct #handle_name #full_generics {
-            sender: tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>,
-        }
-    };
-
-    expanded
-}
-
 pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let input = match syn::parse2::<ItemImpl>(item) {
@@ -129,6 +53,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let self_ty = &input.self_ty;
 
     // Extract the full generics, including where clause
     let full_generics = &input.generics;
@@ -227,24 +152,29 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let expanded = quote! {
 
+        #[derive(Clone, Debug)]
+        pub struct #handle_name #impl_generics {
+            sender: tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>,
+        } #where_clause
+
         #[derive(Debug)]
-        pub enum #ask_enum_name #full_generics {
+        pub enum #ask_enum_name #impl_generics {
             #ask_variants
-        }
+        } #where_clause
 
         // Tells are clonable for broadcasts
         #[derive(Debug, Clone)]
-        pub enum #tell_enum_name #full_generics {
+        pub enum #tell_enum_name #impl_generics {
             #tell_variants
-        }
+        } #where_clause
 
         #[derive(Debug)]
-        pub enum #actor_enum_name #full_generics {
+        pub enum #actor_enum_name #impl_generics {
             Ask(#ask_enum_name #ty_generics),
             Tell(#tell_enum_name #ty_generics),
-        }
+        } #where_clause
 
-        impl #impl_generics #name #ty_generics #where_clause {
+        impl #impl_generics #self_ty #where_clause {
 
             pub fn run(mut self) -> #handle_name #ty_generics {
                 let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);

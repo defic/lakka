@@ -1,8 +1,8 @@
 
 use std::time::Duration;
-use pakka::{actor, messages};
+use pakka::messages;
 
-#[actor]
+//#[actor]
 #[derive(Default)]
 struct SimpleTest {
     counter: u32,

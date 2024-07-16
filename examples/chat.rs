@@ -1,9 +1,8 @@
 use std::{collections::{hash_map::Entry, HashMap}, net::SocketAddr, sync::Arc, time::{Duration, Instant}};
 
-use pakka::{actor, messages};
+use pakka::messages;
 use tokio::net::UdpSocket;
 
-#[actor]
 pub struct ChatUser {
     addr: SocketAddr,
     sock: Arc<UdpSocket>,
@@ -28,8 +27,7 @@ impl ChatUser {
     }
 }
 
-//#[derive(Default)]
-#[actor]
+
 pub struct Chat {
     users: Vec<ChatUserHandle>,
     broadcast_sender: tokio::sync::broadcast::Sender<ChatUserTellMessage>,
