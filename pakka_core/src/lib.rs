@@ -21,6 +21,17 @@ fn to_pascal_case(s: &str) -> String {
     pascal
 }
 
+fn to_snake_case(s: &str) -> String {
+    let mut snake = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && ch.is_uppercase() {
+            snake.push('_');
+        }
+        snake.push(ch.to_ascii_lowercase());
+    }
+    snake
+}
+
 pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let input = match syn::parse2::<ItemImpl>(item) {
@@ -35,9 +46,9 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let name = if let Type::Path(type_path) = &*input.self_ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            &segment.ident
+    let (name, full_type) = if let Type::Path(type_path) = &*input.self_ty {
+        if let Some(last_segment) = type_path.path.segments.last() {
+            (&last_segment.ident, &input.self_ty)
         } else {
             return syn::Error::new(
                 Span::call_site(),
@@ -58,11 +69,14 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Extract the full generics, including where clause
     let full_generics = &input.generics;
 
+    let type_string = quote! { #full_type }.to_string().replace([' ', '<', '>'], "").replace("::", "");
     let ask_enum_name = format_ident!("{}AskMessage", name);
     let tell_enum_name = format_ident!("{}TellMessage", name);
     let actor_enum_name = format_ident!("{}Message", name);
-
     let handle_name = format_ident!("{}Handle", name);
+
+    //let module_name = type_string.to_string();
+    let module_name = format_ident!("{}", to_snake_case(&type_string));
 
     let mut ask_variants = quote! {};
     let mut tell_variants = quote! {};
@@ -150,111 +164,117 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let name_string = name.to_string();
 
-    let expanded = quote! {
+    let expanded = quote! { 
+        
+        mod #module_name {
+            use super::*;
 
-        #[derive(Clone, Debug)]
-        pub struct #handle_name #impl_generics {
-            sender: tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>,
-        } #where_clause
+            #[derive(Clone, Debug)]
+            pub struct #handle_name #impl_generics {
+                sender: tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>,
+            } #where_clause
 
-        #[derive(Debug)]
-        pub enum #ask_enum_name #impl_generics {
-            #ask_variants
-        } #where_clause
+            #[derive(Debug)]
+            pub enum #ask_enum_name #impl_generics {
+                #ask_variants
+            } #where_clause
 
-        // Tells are clonable for broadcasts
-        #[derive(Debug, Clone)]
-        pub enum #tell_enum_name #impl_generics {
-            #tell_variants
-        } #where_clause
+            // Tells are clonable for broadcasts
+            #[derive(Debug, Clone)]
+            pub enum #tell_enum_name #impl_generics {
+                #tell_variants
+            } #where_clause
 
-        #[derive(Debug)]
-        pub enum #actor_enum_name #impl_generics {
-            Ask(#ask_enum_name #ty_generics),
-            Tell(#tell_enum_name #ty_generics),
-        } #where_clause
+            #[derive(Debug)]
+            pub enum #actor_enum_name #impl_generics {
+                Ask(#ask_enum_name #ty_generics),
+                Tell(#tell_enum_name #ty_generics),
+            } #where_clause
 
-        impl #impl_generics #self_ty #where_clause {
+            impl #impl_generics #self_ty #where_clause {
 
-            pub fn run(mut self) -> #handle_name #ty_generics {
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
-                
-                tokio::spawn(async move {
-                    while let Some(msg) = rx.recv().await {
-                        self.handle_message(msg).await;
-                    }
-                    self.exit();
-                });
+                pub fn run(mut self) -> #handle_name #ty_generics {
+                    let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
+                    
+                    tokio::spawn(async move {
+                        while let Some(msg) = rx.recv().await {
+                            self.handle_message(msg).await;
+                        }
+                        self.exit();
+                    });
 
-                #handle_name { sender: tx }
-            }
+                    #handle_name { sender: tx }
+                }
 
-            // Broadcasts can only receive tells.
-            pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
-                
-                tokio::spawn(async move {
-                    loop {
-                        tokio::select! {
-                            msg = rx.recv() => {
-                                match msg {
-                                    Some(msg) => self.handle_message(msg).await,
-                                    None => {
-                                        // The channel has closed, exit the loop
-                                        break;
+                // Broadcasts can only receive tells.
+                pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
+                    let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
+                    
+                    tokio::spawn(async move {
+                        loop {
+                            tokio::select! {
+                                msg = rx.recv() => {
+                                    match msg {
+                                        Some(msg) => self.handle_message(msg).await,
+                                        None => {
+                                            // The channel has closed, exit the loop
+                                            break;
+                                        }
+                                    }
+                                },
+                                result = broadcast_rx.recv() => {
+                                    match result {
+                                        Ok(msg) => self.handle_tells(msg).await,
+                                        Err(err) => match err {
+                                            tokio::sync::broadcast::error::RecvError::Closed => {
+                                                break;
+                                            },
+                                            tokio::sync::broadcast::error::RecvError::Lagged(skipped_messages) => {
+                                                // The broadcast channel lagging
+                                                eprintln!("{} broadcast receiver lagging, skipped: {} messages", #name_string, skipped_messages);
+                                            },
+                                        },
                                     }
                                 }
-                            },
-                            result = broadcast_rx.recv() => {
-                                match result {
-                                    Ok(msg) => self.handle_tells(msg).await,
-                                    Err(err) => match err {
-                                        tokio::sync::broadcast::error::RecvError::Closed => {
-                                            break;
-                                        },
-                                        tokio::sync::broadcast::error::RecvError::Lagged(skipped_messages) => {
-                                            // The broadcast channel lagging
-                                            eprintln!("{} broadcast receiver lagging, skipped: {} messages", #name_string, skipped_messages);
-                                        },
-                                    },
-                                }
-                            }
-                        } 
+                            } 
+                        }
+
+                        self.exit();
+                    });
+
+                    #handle_name { sender: tx }
+                }
+
+                fn exit(&self) {
+                    println!("{} actor task exiting", #name_string);
+                }
+
+                async fn handle_message(&mut self, msg: #actor_enum_name #ty_generics) {
+                    match msg {
+                        #actor_enum_name::Ask(ask_msg) => self.handle_asks(ask_msg).await,
+                        #actor_enum_name::Tell(tell_msg) => self.handle_tells(tell_msg).await,
                     }
+                }
 
-                    self.exit();
-                });
+                async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics) {
+                    match msg {
+                        #ask_handlers
+                    }
+                }
 
-                #handle_name { sender: tx }
-            }
-
-            fn exit(&self) {
-                println!("{} actor task exiting", #name_string);
-            }
-
-            async fn handle_message(&mut self, msg: #actor_enum_name #ty_generics) {
-                match msg {
-                    #actor_enum_name::Ask(ask_msg) => self.handle_asks(ask_msg).await,
-                    #actor_enum_name::Tell(tell_msg) => self.handle_tells(tell_msg).await,
+                async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics) {
+                    match msg {
+                        #tell_handlers
+                    }
                 }
             }
 
-            async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics) {
-                match msg {
-                    #ask_handlers
-                }
-            }
-
-            async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics) {
-                match msg {
-                    #tell_handlers
-                }
+            impl #impl_generics #handle_name #ty_generics #where_clause {
+                #handle_methods
             }
         }
 
-        impl #impl_generics #handle_name #ty_generics #where_clause {
-            #handle_methods
-        }
+        use #module_name::*;
 
         #[allow(dead_code)]
         #input

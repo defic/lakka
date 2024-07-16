@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, time::Duration};
+use std::time::Duration;
 
 use pakka::messages;
 
@@ -10,35 +10,35 @@ pub struct Disconnected;
 
 #[derive(Debug)]
 pub struct Connection<State> {
-    state: State
+    _state: State
 }
 
 #[messages]
 impl Connection<Connected> {
 
-    //this doesn't make sense, but maybe there is more to this.
-    pub fn disconnect(&mut self) -> Connection<Disconnected>{
-        Connection{state: Disconnected}
+    pub fn disconnect(&mut self) -> connection_disconnected::ConnectionHandle{
+        Connection{_state: Disconnected}.run()
     }
 }
-
-/* Doesn't work yet
 
 #[messages]
 impl Connection<Disconnected> {
-    pub fn connect(&self) {
-        println!("connecting...")
+    pub fn connect(&self) -> connection_connected::ConnectionHandle {
+        Connection{_state: Connected}.run()
     }
 }
- */
 
 
 #[tokio::main]
 async fn main() {
-    let con = Connection{state: Connected};
+    let con = Connection{_state: Connected};
     let handle = con.run();
     let d = handle.disconnect().await;
-    println!("received {:?}", d);
+    println!("received disconnect", );
+
+    drop(handle);
+    let _k = d.connect().await;
+    println!("received connected");
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
