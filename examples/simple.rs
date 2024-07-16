@@ -46,6 +46,7 @@ impl SimpleTest {
 async fn main() {
 
     let asd = SimpleTest::new().run();
+    
     asd.set_last_value("innit".into()).await;
     asd.print().await;
     asd.set_last_value("monkey".into()).await;

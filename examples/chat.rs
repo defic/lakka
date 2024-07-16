@@ -1,4 +1,4 @@
-use std::{collections::{hash_map::Entry, HashMap}, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::{hash_map::Entry, HashMap}, net::SocketAddr, sync::Arc, time::{Duration, Instant}};
 
 use pakka::{actor, messages};
 use tokio::net::UdpSocket;
@@ -18,36 +18,58 @@ impl ChatUser {
         _ = self.sock.send_to(msg.as_bytes(), self.addr).await;
     }
 
+    async fn chat_send_bytes(&self, bytes: Arc<Vec<u8>>) {
+        _ = self.sock.send_to(&bytes[..], self.addr).await;
+    }
+
     async fn client_send(&self, msg: String) {
         let msg = format!("{}: {}", self.name, msg);
         self.chat_handle.send_message(msg).await;
     }
 }
 
-#[derive(Default)]
+//#[derive(Default)]
 #[actor]
 pub struct Chat {
-    pub count: u32,
-    pub users: Vec<ChatUserHandle>,
+    users: Vec<ChatUserHandle>,
+    broadcast_sender: tokio::sync::broadcast::Sender<ChatUserTellMessage>,
 }
 
 impl Chat {
-    async fn broadcast(&self, msg: String) {
+
+    #[allow(clippy::new_without_default)] //not sure why there is warning here
+    pub fn new() -> Self {
+        let (broadcast_sender, _) = tokio::sync::broadcast::channel(100);
+        Self {
+            broadcast_sender,
+            users: Vec::default(),
+        }
+    }
+
+    async fn broadcast(&self, msg: String) {    
+        let d = Instant::now();
+        let _ = self.broadcast_sender.send(ChatUserTellMessage::ChatSend(msg));
+
+        println!("Sending message to {} took {:?}", self.users.len(), d.elapsed());
+    }
+
+    #[allow(dead_code)]
+    async fn broadcast_individually(&self, msg: String) {    
+        let d = Instant::now();
         for user in &self.users {
             user.chat_send(msg.clone()).await;
         }
+
+        println!("Sending message to {} took {:?}", self.users.len(), d.elapsed());
     }
 }
 
 #[messages]
 impl Chat {
-    pub fn new() -> Self {
-        Chat::default()
-    }
 
     async fn join(&mut self, name: String, addr: SocketAddr, sock: Arc<UdpSocket>, chat_handle: ChatHandle) -> ChatUserHandle {
         self.broadcast(format!("{} joined", name)).await;
-        let user_handle = ChatUser {name, addr, sock, chat_handle}.run();
+        let user_handle = ChatUser {name, addr, sock, chat_handle}.run_with_broadcast_receiver(self.broadcast_sender.subscribe());
         self.users.push(user_handle.clone());
         user_handle
     }
@@ -63,9 +85,9 @@ async fn main()  {
     let server_addr: SocketAddr = "0.0.0.0:8080".parse().unwrap();
     tokio::spawn(run_server(server_addr));
 
-    for i in 0..10 {
-        tokio::time::sleep(Duration::from_millis(666)).await;
-        tokio::spawn(client(format!("client({i})"), server_addr));
+    for i in 0..128 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::spawn(client(i, format!("client({i})"), server_addr));
     }
 
     tokio::time::sleep(Duration::from_secs(100)).await;
@@ -102,21 +124,23 @@ async fn run_server(server_addr: SocketAddr) {
     }
 }
 
-async fn client(name: String, server_addr: SocketAddr) {
+async fn client(index: i32, name: String, server_addr: SocketAddr) {
     let sock = UdpSocket::bind("0.0.0.0:0").await.unwrap();
     sock.send_to(name.as_bytes(), server_addr).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let mut interval = tokio::time::interval(Duration::from_secs(2));
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
     let mut msg_counter = 0;
     loop {
         tokio::select! {
-            msg = recv(&sock) => {
-                println!("{} received: {}", name, msg)
+            _ = recv(&sock) => {
+                //println!("{} received: {}", name, msg)
             },
             _ = interval.tick() => {
-                sock.send_to(generate_message(msg_counter).as_bytes(), server_addr).await.unwrap();
-                msg_counter += 1;
+                if index == 0 {
+                    sock.send_to(generate_message(msg_counter).as_bytes(), server_addr).await.unwrap();
+                    msg_counter += 1;
+                }
             }
         }
     }

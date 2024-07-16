@@ -59,7 +59,7 @@ pub fn actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let full_generics = &input.generics;
     //input.fields
 
-    let message_enum_name = format_ident!("{}Message", name);
+    let actor_enum_name = format_ident!("{}Message", name);
     let handle_name = format_ident!("{}Handle", name);
 
 
@@ -90,7 +90,7 @@ pub fn actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #[derive(Clone, Debug)]
         pub struct #handle_name #full_generics {
-            sender: tokio::sync::mpsc::Sender<#message_enum_name #ty_generics>,
+            sender: tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>,
         }
     };
 
@@ -127,18 +127,23 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         ).to_compile_error();
     };
 
-
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     // Extract the full generics, including where clause
     let full_generics = &input.generics;
 
-    let message_enum_name = format_ident!("{}Message", name);
+    let ask_enum_name = format_ident!("{}AskMessage", name);
+    let tell_enum_name = format_ident!("{}TellMessage", name);
+    let actor_enum_name = format_ident!("{}Message", name);
+
     let handle_name = format_ident!("{}Handle", name);
 
-    let mut message_variants = quote! {};
-    let mut message_handlers = quote! {};
+    let mut ask_variants = quote! {};
+    let mut tell_variants = quote! {};
+    let mut ask_handlers = quote! {};
+    let mut tell_handlers = quote! {};
+
     let mut handle_methods = quote! {};
 
     for item in &input.items {
@@ -174,29 +179,33 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
             match return_type {
                 syn::ReturnType::Default => {
-                    message_variants.extend(quote! {
+                    //Tell variants
+
+                    tell_variants.extend(quote! {
                         #variant_name(#variant_fields),
                     });
 
-                    message_handlers.extend(quote! {
-                        #message_enum_name::#variant_name(#handler_args) => {
+                    tell_handlers.extend(quote! {
+                        #tell_enum_name::#variant_name(#handler_args) => {
                             self.#method_name(#handler_args)#async_code;
                         },
                     });
 
                     handle_methods.extend(quote! {
                         pub async fn #method_name(&self #(, #cleaned_args)*) {
-                            let _ = self.sender.send(#message_enum_name::#variant_name(#handle_args)).await;
+                            let _ = self.sender.send(#actor_enum_name::Tell(#tell_enum_name::#variant_name(#handle_args))).await;
                         }
                     });
                 },
                 syn::ReturnType::Type(_, ty) => {
-                    message_variants.extend(quote! {
+                    //Ask variants
+
+                    ask_variants.extend(quote! {
                         #variant_name(#variant_fields tokio::sync::oneshot::Sender<#ty>),
                     });
 
-                    message_handlers.extend(quote! {
-                        #message_enum_name::#variant_name(#handler_args resp) => {
+                    ask_handlers.extend(quote! {
+                        #ask_enum_name::#variant_name(#handler_args resp) => {
                             let result = self.#method_name(#handler_args)#async_code;
                             let _ = resp.send(result);
                         },
@@ -205,7 +214,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     handle_methods.extend(quote! {
                         pub async fn #method_name(&self #(, #cleaned_args)*) -> #ty {
                             let (tx, rx) = tokio::sync::oneshot::channel();
-                            let _ = self.sender.send(#message_enum_name::#variant_name(#handle_args tx)).await;
+                            let _ = self.sender.send(#actor_enum_name::Ask(#ask_enum_name::#variant_name(#handle_args tx))).await;
                             rx.await.expect("Actor task has been killed")
                         }
                     });
@@ -214,33 +223,104 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    let name_string = name.to_string();
+
     let expanded = quote! {
+
         #[derive(Debug)]
-        pub enum #message_enum_name #full_generics {
-            #message_variants
+        pub enum #ask_enum_name #full_generics {
+            #ask_variants
+        }
+
+        // Tells are clonable for broadcasts
+        #[derive(Debug, Clone)]
+        pub enum #tell_enum_name #full_generics {
+            #tell_variants
+        }
+
+        #[derive(Debug)]
+        pub enum #actor_enum_name #full_generics {
+            Ask(#ask_enum_name #ty_generics),
+            Tell(#tell_enum_name #ty_generics),
         }
 
         impl #impl_generics #name #ty_generics #where_clause {
 
             pub fn run(mut self) -> #handle_name #ty_generics {
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<#message_enum_name #ty_generics>(100);
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
                 
                 tokio::spawn(async move {
                     while let Some(msg) = rx.recv().await {
                         self.handle_message(msg).await;
                     }
+                    self.exit();
                 });
 
                 #handle_name { sender: tx }
             }
 
-            async fn handle_message(&mut self, msg: #message_enum_name #ty_generics) {
+            // Broadcasts can only receive tells.
+            pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
+                
+                tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            msg = rx.recv() => {
+                                match msg {
+                                    Some(msg) => self.handle_message(msg).await,
+                                    None => {
+                                        // The channel has closed, exit the loop
+                                        break;
+                                    }
+                                }
+                            },
+                            result = broadcast_rx.recv() => {
+                                match result {
+                                    Ok(msg) => self.handle_tells(msg).await,
+                                    Err(err) => match err {
+                                        tokio::sync::broadcast::error::RecvError::Closed => {
+                                            break;
+                                        },
+                                        tokio::sync::broadcast::error::RecvError::Lagged(skipped_messages) => {
+                                            // The broadcast channel lagging
+                                            eprintln!("{} broadcast receiver lagging, skipped: {} messages", #name_string, skipped_messages);
+                                        },
+                                    },
+                                }
+                            }
+                        } 
+                    }
+
+                    self.exit();
+                });
+
+                #handle_name { sender: tx }
+            }
+
+            fn exit(&self) {
+                println!("{} actor task exiting", #name_string);
+            }
+
+            async fn handle_message(&mut self, msg: #actor_enum_name #ty_generics) {
                 match msg {
-                    #message_handlers
+                    #actor_enum_name::Ask(ask_msg) => self.handle_asks(ask_msg).await,
+                    #actor_enum_name::Tell(tell_msg) => self.handle_tells(tell_msg).await,
+                }
+            }
+
+            async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics) {
+                match msg {
+                    #ask_handlers
+                }
+            }
+
+            async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics) {
+                match msg {
+                    #tell_handlers
                 }
             }
         }
-
 
         impl #impl_generics #handle_name #ty_generics #where_clause {
             #handle_methods
