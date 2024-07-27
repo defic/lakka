@@ -183,18 +183,6 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
-    let tell_enum_block = quote! {
-        pub enum #tell_enum_name #impl_generics {
-            #tell_variants
-        } #where_clause
-    };
-
-    let ask_enum_block = quote! {
-        pub enum #ask_enum_name #impl_generics {
-            #ask_variants
-        } #where_clause
-    };
-
     let name_string = name.to_string();
 
     let expanded = quote! {        
@@ -317,7 +305,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        use #module_name::*;
+        pub use #module_name::*;
 
         #[allow(dead_code)]
         #input
