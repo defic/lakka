@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote, ToTokens};
 use syn::{FnArg, ImplItem, ItemImpl, ItemStruct, Pat, Receiver, Type};
 use proc_macro2::Span;
 
@@ -63,6 +63,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let has_generics = !generics.params.is_empty();
     let self_ty = &input.self_ty;
 
     let type_string = quote! { #full_type }.to_string().replace([' ', '<', '>'], "").replace("::", "");
@@ -80,7 +81,6 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut tell_handlers = quote! {};
 
     let mut handle_methods = quote! {};
-    let mut original_methods = quote! {};
 
     for item in &mut input.items {
         if let ImplItem::Fn(method) = item {
@@ -164,11 +164,44 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    let handle_ask_enum_phantom = has_generics.then(|| {
+        quote! {
+            #ask_enum_name::__Phantom(_) => (),
+        }
+    });
+
+    let handle_tell_enum_phantom = has_generics.then(|| {
+        quote! {
+            #tell_enum_name::__Phantom(_) => (),
+        }
+    });
+
+    let enum_phantom_field = has_generics.then(|| {
+        quote! {
+            #[doc(hidden)]
+            __Phantom(PhantomData #ty_generics),
+        }
+    });
+
+    let tell_enum_block = quote! {
+        pub enum #tell_enum_name #impl_generics {
+            #tell_variants
+        } #where_clause
+    };
+
+    let ask_enum_block = quote! {
+        pub enum #ask_enum_name #impl_generics {
+            #ask_variants
+        } #where_clause
+    };
+
     let name_string = name.to_string();
 
     let expanded = quote! {        
         mod #module_name {
             use pakka::channel::mpsc::{channel, Receiver, Sender};
+            use std::marker::PhantomData;
+
             use super::*;
 
             #[derive(Clone, Debug)]
@@ -179,12 +212,14 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[derive(Debug)]
             pub enum #ask_enum_name #impl_generics {
                 #ask_variants
+                #enum_phantom_field
             } #where_clause
 
             // Tells are clonable for broadcasts
             #[derive(Debug, Clone)]
             pub enum #tell_enum_name #impl_generics {
                 #tell_variants
+                #enum_phantom_field
             } #where_clause
 
             #[derive(Debug)]
@@ -265,12 +300,14 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<'_, #actor_enum_name #ty_generics>) {
                     match msg {
                         #ask_handlers
+                        #handle_ask_enum_phantom
                     }
                 }
 
                 async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<'_, #actor_enum_name #ty_generics>) {
                     match msg {
                         #tell_handlers
+                        #handle_tell_enum_phantom
                     }
                 }
             }

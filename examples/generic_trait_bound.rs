@@ -11,7 +11,6 @@ pub trait Game: fmt::Debug + 'static + Send + Sync + Clone {
     fn update(&mut self, inputs: Vec::<Self::Input>);
 }
 
-//#[actor]
 #[derive(Default)]
 struct Lobby<T: Game> {
     game: T,
@@ -83,6 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     handle.player_input(CacaInput{up: true}).await?;
     handle.alter_state(SomeState::Inputs(vec![])).await?;
     handle.player_input(CacaInput{up: true}).await?;
+    
     let state = handle.state().await;
     println!("State: {:?}", state);
 
