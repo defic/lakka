@@ -23,7 +23,7 @@ impl ChatUser {
 
     async fn client_send(&self, msg: String) {
         let msg = format!("{}: {}", self.name, msg);
-        self.chat_handle.send_message(msg).await;
+        _ = self.chat_handle.send_message(msg).await;
     }
 }
 
@@ -106,12 +106,12 @@ async fn run_server(server_addr: SocketAddr) {
                     Ok(msg) => {
                         if let Entry::Vacant(entry) = users.entry(addr) {
                             //let first message be the name
-                            let handle = chat.join(msg.into(), addr, sock.clone(), chat.clone()).await;
+                            let handle = chat.join(msg.into(), addr, sock.clone(), chat.clone()).await.unwrap();
                             entry.insert(handle);
                         } else {
                             //rest of the messages are sent to chat
                             let player = users.get_mut(&addr).unwrap();
-                            player.client_send(msg.into()).await;
+                            player.client_send(msg.into()).await.unwrap();
                         };
                     },
                     Err(_) => println!("Server received INVALID data"),

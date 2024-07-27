@@ -6,8 +6,11 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace.dependencies]
+tokio = { version = "1.0", features = ["full"] }
+
 [dependencies]
 pakka_macro = { path = "pakka_macro" }
-tokio = { features = ["full"]}
+tokio = { workspace = true }
 
 [lib]

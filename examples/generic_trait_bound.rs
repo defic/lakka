@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt;
 use std::mem;
 use std::time::Duration;
@@ -75,16 +76,17 @@ pub struct CacaInput {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     let gamelobby = Lobby::<CacaGame>::default();
     let handle = gamelobby.run();
 
-    handle.player_input(CacaInput{up: true}).await;
-    handle.alter_state(SomeState::Inputs(vec![])).await;
-    handle.player_input(CacaInput{up: true}).await;
+    handle.player_input(CacaInput{up: true}).await?;
+    handle.alter_state(SomeState::Inputs(vec![])).await?;
+    handle.player_input(CacaInput{up: true}).await?;
     let state = handle.state().await;
     println!("State: {:?}", state);
 
     tokio::time::sleep(Duration::from_millis(50)).await;
+    Ok(())
 }
 

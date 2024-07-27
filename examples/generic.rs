@@ -1,3 +1,4 @@
+
 use std::time::Duration;
 
 use pakka::messages;
@@ -33,7 +34,7 @@ impl Connection<Disconnected> {
 async fn main() {
     let con = Connection{_state: Connected};
     let handle = con.run();
-    let d = handle.disconnect().await;
+    let d = handle.disconnect().await.unwrap();
     println!("received disconnect", );
 
     drop(handle);
@@ -42,3 +43,4 @@ async fn main() {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
+

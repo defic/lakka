@@ -1,6 +1,6 @@
 
 use std::time::Duration;
-use pakka::messages;
+use pakka::{messages, ActorError};
 
 //#[actor]
 #[derive(Default)]
@@ -37,25 +37,27 @@ impl SimpleTest {
     }
 
     fn print(&self) {
-        println!("actor print: {}, altered: {} times", self.last_value, self.counter)
+        println!("actor print: {}, altered: {} times", self.last_value, self.counter);
     }
 }
 
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), ActorError> {
 
     let asd = SimpleTest::new().run();
     
-    asd.set_last_value("innit".into()).await;
-    asd.print().await;
-    asd.set_last_value("monkey".into()).await;
-    asd.set_last_value_async("bononoke".into()).await;
-    println!("Got last value: {}", asd.last_value().await);
-    asd.set_last_value("monkey".into()).await;
-    asd.set_last_value("donkey".into()).await;
-    asd.print().await;
+    asd.set_last_value("innit".into()).await?;
+    asd.print().await?;
+    asd.set_last_value("monkey".into()).await?;
+    asd.set_last_value_async("bononoke".into()).await?;
+    let res = asd.last_value().await;
+    println!("Got last value: {}", res.unwrap());
+    asd.set_last_value("monkey".into()).await?;
+    asd.set_last_value("donkey".into()).await?;
+    asd.print().await?;
     _ = asd;
 
     tokio::time::sleep(Duration::from_millis(50)).await;
+    Ok(())
 }

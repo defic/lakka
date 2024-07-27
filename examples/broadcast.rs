@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::messages;
+use pakka::{messages, ActorError};
 
 
 struct Broadcaster {
@@ -47,23 +47,24 @@ impl BroadcastListener {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), ActorError> {
     let broadcaster = Broadcaster::new().run();
 
-    let listener_handle_1 = broadcaster.create_listener().await;
-    let listener_handle_2 = broadcaster.create_listener().await;
-    let listener_handle_3 = broadcaster.create_listener().await;
+    let listener_handle_1 = broadcaster.create_listener().await?;
+    let listener_handle_2 = broadcaster.create_listener().await?;
+    let listener_handle_3 = broadcaster.create_listener().await?;
 
-    listener_handle_3.number(16.0).await;
-    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Hello from broadcaster".into())).await;
+    listener_handle_3.number(16.0).await?;
+    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Hello from broadcaster".into())).await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
     std::mem::drop(listener_handle_1);
 
-    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Second hello".into())).await;    
+    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Second hello".into())).await?;    
     tokio::time::sleep(Duration::from_millis(100)).await;
     std::mem::drop(listener_handle_2);
 
-    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Third hello".into())).await; 
+    broadcaster.broadcast_msg(BroadcastListenerTellMessage::Message("Third hello".into())).await?; 
     tokio::time::sleep(Duration::from_millis(100)).await; 
-  
+
+    Ok(())
 }
