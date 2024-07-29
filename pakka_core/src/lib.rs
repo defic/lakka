@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{FnArg, ImplItem, ItemImpl, ItemStruct, Pat, Receiver, Type};
+use syn::{parse_quote, FnArg, ImplItem, ItemImpl, ItemStruct, Pat, Receiver, Type, WhereClause, WherePredicate};
 use proc_macro2::Span;
 
 
@@ -72,7 +72,20 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let actor_enum_name = format_ident!("{}Message", name);
     let handle_name = format_ident!("{}Handle", name);
 
-    //let module_name = type_string.to_string();
+    // Modified handle generics to have pakka::ChannelSender
+    let mut handle_generics = generics.clone();
+    handle_generics.params.push(parse_quote!(S));
+    
+    //own generics for ActorHandle, as ChannelSender is generic
+    let channel_sender_predicate: WherePredicate = parse_quote!(S: pakka::ChannelSender<#actor_enum_name #ty_generics>);
+    let handle_where_clause = handle_generics.where_clause.get_or_insert_with(|| WhereClause {
+        where_token: Default::default(),
+        predicates: Default::default(),
+    });
+    handle_where_clause.predicates.push(channel_sender_predicate);
+    let (handle_impl_generics, handle_ty_generics, mut handle_where_clause) = handle_generics.split_for_impl();
+
+
     let module_name = format_ident!("{}", to_snake_case(&type_string));
 
     let mut ask_variants = quote! {};
@@ -159,7 +172,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             //let method_clone = method.clone();
-            let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut pakka::ActorCtx<'_, #module_name::#actor_enum_name #ty_generics>);
+            let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut pakka::ActorCtx<impl pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #module_name::#actor_enum_name #ty_generics>);
             method.sig.inputs.push(new_param);
         }
     }
@@ -193,9 +206,10 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             use super::*;
 
             #[derive(Clone, Debug)]
-            pub struct #handle_name #impl_generics {
-                sender: Sender<#actor_enum_name #ty_generics>,
-            } #where_clause
+            pub struct #handle_name #handle_impl_generics #handle_where_clause {
+                sender: S,
+                _phantom: std::marker::PhantomData<#actor_enum_name #ty_generics>,
+            }
 
             #[derive(Debug)]
             pub enum #ask_enum_name #impl_generics {
@@ -218,30 +232,60 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
             impl #impl_generics #self_ty #where_clause {
 
-                pub fn run(mut self) -> #handle_name #ty_generics {
-                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
-                    
+                pub fn runs<S: pakka::ChannelSender<#actor_enum_name #ty_generics>, R: pakka::Channel<#module_name::#actor_enum_name #ty_generics> + Send + 'static>(mut self, (tx, rx): (S, R)) -> #handle_name #handle_ty_generics {
                     tokio::spawn(async move {
-                        while let Some(msg) = rx.recv().await {
-                            let mut ctx = pakka::ActorCtx { rx: &mut rx };
+                        let mut ctx = pakka::ActorCtx::new(rx);
+                        while let Ok(msg) = ctx.rx.recv().await {
                             self.handle_message(msg, &mut ctx).await;
+                            if ctx.kill_flag {
+                                break;
+                            }
                         }
                         self.exit();
                     });
 
-                    #handle_name { sender: tx }
+                    #handle_name { sender: tx, _phantom: Default::default() }
                 }
+
+                //overwhelmed rn, idk what to do
+                /* 
+                pub fn run(mut self) -> #handle_name #ty_generics { 
+                    let (tx, mut rx) = channel(100);
+                    self.runs(tx, rx)
+                }
+                */
+
+                /* 
+                pub fn run_tokio(mut self) -> #handle_name <#handle_ty_generics tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>> {
+                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
+                    self.runs(tx, rx)
+                }
+
+                pub fn run(mut self) -> #handle_name #handle_ty_generics {
+                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
+                    self.runs(tx, rx)
+                }
+                */
+
+                /* 
+                pub fn run_with_channel(mut self, tx: impl pakka::ChannelSender<#ty_generics>) {
+                    
+                }
+                */
 
                 
                 // Broadcasts can only receive tells.
-                pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
+                //pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
+                /* 
+                pub fn run_with_broadcast_receiver<S: pakka::ChannelSender<#actor_enum_name #ty_generics>>(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name<S> {
                     let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
                     
                     tokio::spawn(async move {
+                        let mut ctx = pakka::ActorCtx::new(rx);
                         loop {
                             tokio::select! {
-                                msg = rx.recv() => {
-                                    let mut ctx = pakka::ActorCtx { rx: &mut rx };
+                                msg = ctx.rx.recv() => {
+                                    //let mut ctx = pakka::ActorCtx::new(rx);
                                     match msg {
                                         Some(msg) => self.handle_message(msg, &mut ctx).await,
                                         None => {
@@ -251,7 +295,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                                     }
                                 },
                                 result = broadcast_rx.recv() => {
-                                    let mut ctx = pakka::ActorCtx { rx: &mut rx };
+                                    //let mut ctx = pakka::ActorCtx::new(rx);
                                     match result {
                                         Ok(msg) => self.handle_tells(msg, &mut ctx).await,
                                         Err(err) => match err {
@@ -265,34 +309,38 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                                         },
                                     }
                                 }
-                            } 
+                            }
+                            if ctx.kill_flag {
+                                break;
+                            }
                         }
 
                         self.exit();
                     });
 
-                    #handle_name { sender: tx }
+                    #handle_name { sender: tx, _phantom: Default::default() }
                 }
+                */
 
                 fn exit(&self) {
                     println!("{} actor task exiting", #name_string);
                 }
 
-                async fn handle_message(&mut self, msg: #actor_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<'_, #actor_enum_name #ty_generics>) {
+                async fn handle_message(&mut self, msg: #actor_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<impl pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #actor_enum_name #ty_generics>) {
                     match msg {
                         #actor_enum_name::Ask(ask_msg) => self.handle_asks(ask_msg, &mut _ctx).await,
                         #actor_enum_name::Tell(tell_msg) => self.handle_tells(tell_msg, &mut _ctx).await,
                     }
                 }
 
-                async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<'_, #actor_enum_name #ty_generics>) {
+                async fn handle_asks(&mut self, msg: #ask_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<impl pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #actor_enum_name #ty_generics>) {
                     match msg {
                         #ask_handlers
                         #handle_ask_enum_phantom
                     }
                 }
 
-                async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<'_, #actor_enum_name #ty_generics>) {
+                async fn handle_tells(&mut self, msg: #tell_enum_name #ty_generics, mut _ctx: &mut pakka::ActorCtx<impl pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #actor_enum_name #ty_generics>) {
                     match msg {
                         #tell_handlers
                         #handle_tell_enum_phantom
@@ -300,7 +348,13 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
-            impl #impl_generics #handle_name #ty_generics #where_clause {
+            impl #handle_impl_generics #handle_name #handle_ty_generics #handle_where_clause {
+                pub fn new(sender: S) -> Self {
+                    Self {
+                        sender,
+                        _phantom: Default::default(),
+                    }
+                }
                 #handle_methods
             }
         }

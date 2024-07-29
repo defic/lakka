@@ -1,5 +1,5 @@
 
-use std::fmt;
+use std::{fmt, future::Future, marker::PhantomData};
 pub mod channel;
 pub use self::channel::mpsc::*;
 
@@ -7,13 +7,27 @@ pub use self::channel::mpsc::*;
 use channel::mpsc;
 pub use pakka_macro::messages;
 
-pub struct ActorCtx<'a, T> {
-    pub rx: &'a mut mpsc::Receiver<T> 
+pub struct ActorCtx<C, T> 
+where 
+    C: Channel<T>
+{
+    pub rx: C,
+    pub kill_flag: bool,
+    _t: std::marker::PhantomData<T>
 }
 
-impl<'a, T> ActorCtx<'a, T> {
+impl<C, T> ActorCtx<C, T>
+where 
+    C: Channel<T>
+{
+    pub fn new(rx: C) -> Self {
+        Self {
+            rx, kill_flag: false, _t: Default::default()
+        }
+    }
+
     pub fn shut_down_actor(&mut self) {
-        self.rx.close();
+        self.kill_flag = true;
     }
 }
 
@@ -44,64 +58,87 @@ impl From<RecvError> for ActorError {
     }
 }
 
-async fn test() {
-    let (tx, mut rx) = mpsc::channel::<u32>(100);
+async fn test()
+{
+    let (tx, mut rx) = channel::<ConcreteType>(100);
     let asd = rx.recv().await;
 
     if let Some(msg) = rx.recv().await {
-        let mut ctx = ActorCtx { rx: &mut rx };
+        let mut ctx = ActorCtx::new(rx);
         borrowing_function(msg, &mut ctx);
     }
 
+    let k = SomeThing {
+        sender: tx
+    };
 }
 
 
-fn borrowing_function<T>(msg: T, ctx: &mut ActorCtx<'_, T>) {
+fn borrowing_function<T>(msg: T, ctx: &mut ActorCtx<impl Channel<T>, T>) {
     // If some condition is met, close the receiver
     ctx.shut_down_actor();
+
+
 }
 
-#[tokio::test]
-async fn test2() -> Result<(), ActorError> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<u32>(100);
+pub struct Assh<T, C: ChannelSender<T>> {
+    pub tx: C,
+    _t: std::marker::PhantomData<T>
+}
+pub struct ConcreteType {}
 
-    if let Err(err) = tx.try_send(12) {
-        println!("Error: {:?}", err);
-    }
-
-    if let Err(err) = tx.send(12).await {
-        println!("Error: {:?}", err);
-    }
-
-    if let Some(msg) = rx.recv().await {
-        borrowing_function2(msg, rx);
-    }
-
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    _ = tx.send(12);
-
-    rx.await?;
-
-    //rx.recv().await.
-    Ok(())
+#[derive(Clone)]
+pub struct SomeThing<S>
+where 
+    S: ChannelSender<ConcreteType>
+{
+    pub sender: S
 }
 
-
-fn borrowing_function2<T>(msg: T, mut channel: impl Channel) {
-    // If some condition is met, close the receiver
-    println!("Closing channel!");
-    channel.close_channel();
+pub trait ChannelSender<T> {
+    fn send(&self, msg: T) -> impl Future<Output = Result<(), ActorError>>;
 }
 
-pub trait Channel {
-    fn close_channel(&mut self);
-}
-
-
-impl<T> Channel for tokio::sync::mpsc::Receiver<T> {
-    fn close_channel(&mut self) {
-        self.close();
+impl <T> ChannelSender<T> for tokio::sync::mpsc::Sender<T> {
+    async fn send(&self, msg: T) -> Result<(), ActorError> {
+        Self::send(self, msg).await.map_err(|e| e.into())
     }
 }
 
 
+pub trait Channel<T> {
+    fn recv(&mut self) -> impl Future<Output = Result<T, ActorError>> + Send;
+}
+
+
+impl<T: Send> Channel<T> for tokio::sync::mpsc::Receiver<T> {
+
+    async fn recv(&mut self) -> Result<T, ActorError> {
+        match self.recv().await {
+            Some(value) => Ok(value),
+            None => Err(ActorError::ActorClosed),
+        }
+    }
+}
+
+impl Channel<tokio::time::Instant> for tokio::time::Interval {
+    async fn recv(&mut self) -> Result<tokio::time::Instant, ActorError> {
+        let res = self.tick().await;
+        Ok(res)
+    }
+}
+
+struct Interval<Message: Clone> {
+    interval: tokio::time::Interval,
+    message: Message,
+}
+
+/* 
+impl <Message: Clone> Channel<Message> for Interval<Message> {
+
+    async fn recv(&mut self) -> Result<Message, ActorError> {
+        let _ = self.interval.tick().await;
+        Ok(self.message.clone())
+    }
+}
+*/

@@ -33,17 +33,17 @@ pub struct Chat {
     broadcast_sender: tokio::sync::broadcast::Sender<ChatUserTellMessage>,
 }
 
-impl Chat {
-
-    #[allow(clippy::new_without_default)] //not sure why there is warning here
-    pub fn new() -> Self {
+impl Default for Chat {
+    fn default() -> Self {
         let (broadcast_sender, _) = tokio::sync::broadcast::channel(100);
         Self {
             broadcast_sender,
             users: Vec::default(),
         }
     }
+}
 
+impl Chat {
     async fn broadcast(&self, msg: String) {    
         let d = Instant::now();
         let _ = self.broadcast_sender.send(ChatUserTellMessage::ChatSend(msg));
@@ -93,7 +93,7 @@ async fn main()  {
 
 async fn run_server(server_addr: SocketAddr) {
     let sock = Arc::new(UdpSocket::bind(server_addr).await.unwrap());
-    let chat = Chat::new().run();
+    let chat = Chat::default().run();
     let mut users: HashMap<SocketAddr, ChatUserHandle> = Default::default();
 
     let mut buf = [0; 1024];

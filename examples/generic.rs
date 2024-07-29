@@ -17,7 +17,7 @@ pub struct Connection<State> {
 #[messages]
 impl Connection<Connected> {
 
-    pub fn disconnect(&mut self) -> connection_disconnected::ConnectionHandle{
+    pub fn disconnect(&mut self) -> connection_disconnected::ConnectionHandle {
         Connection{_state: Disconnected}.run()
     }
 }
