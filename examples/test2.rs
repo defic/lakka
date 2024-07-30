@@ -3,148 +3,92 @@
 use std::prelude::rust_2021::*;
 #[macro_use]
 extern crate std;
-use pakka::messages;
-pub struct Test {
-    frame: u32,
-}
-#[automatically_derived]
-impl ::core::clone::Clone for Test {
-    #[inline]
-    fn clone(&self) -> Test {
-        Test {
-            frame: ::core::clone::Clone::clone(&self.frame),
-        }
-    }
-}
-impl Peb for Test {
-    fn update(&mut self) -> u32 {
-        self.frame += 1;
-        self.frame
-    }
-}
-pub trait Peb: Send + Sync + Clone + 'static {
-    fn update(&mut self) -> u32;
-}
-pub struct Updater<T: Peb> {
-    peb: T,
-}
-mod updater_t {
+use std::time::Duration;
+use pakka::{messages, Interval};
+pub struct Test {}
+mod test {
     use pakka::channel::mpsc::{channel, Receiver, Sender};
+    use pakka::ActorMessage;
     use std::marker::PhantomData;
+    use futures::stream::*;
+    use futures::FutureExt;
     use super::*;
-    pub struct UpdaterHandle<T: Peb, S>
-    where
-        S: pakka::ChannelSender<UpdaterMessage<T>>,
-    {
-        sender: S,
-        _phantom: std::marker::PhantomData<UpdaterMessage<T>>,
+    pub struct TestHandle {
+        sender: Sender<TestMessage>,
     }
     #[automatically_derived]
-    impl<T: ::core::clone::Clone + Peb, S: ::core::clone::Clone> ::core::clone::Clone
-    for UpdaterHandle<T, S>
-    where
-        S: pakka::ChannelSender<UpdaterMessage<T>>,
-    {
+    impl ::core::clone::Clone for TestHandle {
         #[inline]
-        fn clone(&self) -> UpdaterHandle<T, S> {
-            UpdaterHandle {
+        fn clone(&self) -> TestHandle {
+            TestHandle {
                 sender: ::core::clone::Clone::clone(&self.sender),
-                _phantom: ::core::clone::Clone::clone(&self._phantom),
             }
         }
     }
     #[automatically_derived]
-    impl<T: ::core::fmt::Debug + Peb, S: ::core::fmt::Debug> ::core::fmt::Debug
-    for UpdaterHandle<T, S>
-    where
-        S: pakka::ChannelSender<UpdaterMessage<T>>,
-    {
+    impl ::core::fmt::Debug for TestHandle {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-            ::core::fmt::Formatter::debug_struct_field2_finish(
+            ::core::fmt::Formatter::debug_struct_field1_finish(
                 f,
-                "UpdaterHandle",
+                "TestHandle",
                 "sender",
-                &self.sender,
-                "_phantom",
-                &&self._phantom,
+                &&self.sender,
             )
         }
     }
-    pub enum UpdaterAskMessage<T: Peb> {
-        Update(tokio::sync::oneshot::Sender<u32>),
-        #[doc(hidden)]
-        __Phantom(PhantomData<T>),
-    }
+    pub enum TestAskMessage {}
     #[automatically_derived]
-    impl<T: ::core::fmt::Debug + Peb> ::core::fmt::Debug for UpdaterAskMessage<T> {
+    impl ::core::fmt::Debug for TestAskMessage {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-            match self {
-                UpdaterAskMessage::Update(__self_0) => {
-                    ::core::fmt::Formatter::debug_tuple_field1_finish(
-                        f,
-                        "Update",
-                        &__self_0,
-                    )
-                }
-                UpdaterAskMessage::__Phantom(__self_0) => {
-                    ::core::fmt::Formatter::debug_tuple_field1_finish(
-                        f,
-                        "__Phantom",
-                        &__self_0,
-                    )
-                }
-            }
+            match *self {}
         }
     }
-    pub enum UpdaterTellMessage<T: Peb> {
-        #[doc(hidden)]
-        __Phantom(PhantomData<T>),
+    pub enum TestTellMessage {
+        Ping(),
+        Test(),
     }
     #[automatically_derived]
-    impl<T: ::core::fmt::Debug + Peb> ::core::fmt::Debug for UpdaterTellMessage<T> {
+    impl ::core::fmt::Debug for TestTellMessage {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-            match self {
-                UpdaterTellMessage::__Phantom(__self_0) => {
-                    ::core::fmt::Formatter::debug_tuple_field1_finish(
-                        f,
-                        "__Phantom",
-                        &__self_0,
-                    )
-                }
-            }
+            ::core::fmt::Formatter::write_str(
+                f,
+                match self {
+                    TestTellMessage::Ping() => "Ping",
+                    TestTellMessage::Test() => "Test",
+                },
+            )
         }
     }
     #[automatically_derived]
-    impl<T: ::core::clone::Clone + Peb> ::core::clone::Clone for UpdaterTellMessage<T> {
+    impl ::core::clone::Clone for TestTellMessage {
         #[inline]
-        fn clone(&self) -> UpdaterTellMessage<T> {
+        fn clone(&self) -> TestTellMessage {
             match self {
-                UpdaterTellMessage::__Phantom(__self_0) => {
-                    UpdaterTellMessage::__Phantom(::core::clone::Clone::clone(__self_0))
-                }
+                TestTellMessage::Ping() => TestTellMessage::Ping(),
+                TestTellMessage::Test() => TestTellMessage::Test(),
             }
         }
     }
-    pub enum UpdaterMessage<T: Peb> {
-        Ask(UpdaterAskMessage<T>),
-        Tell(UpdaterTellMessage<T>),
+    pub enum TestMessage {
+        Ask(TestAskMessage),
+        Tell(TestTellMessage),
     }
     #[automatically_derived]
-    impl<T: ::core::fmt::Debug + Peb> ::core::fmt::Debug for UpdaterMessage<T> {
+    impl ::core::fmt::Debug for TestMessage {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
             match self {
-                UpdaterMessage::Ask(__self_0) => {
+                TestMessage::Ask(__self_0) => {
                     ::core::fmt::Formatter::debug_tuple_field1_finish(
                         f,
                         "Ask",
                         &__self_0,
                     )
                 }
-                UpdaterMessage::Tell(__self_0) => {
+                TestMessage::Tell(__self_0) => {
                     ::core::fmt::Formatter::debug_tuple_field1_finish(
                         f,
                         "Tell",
@@ -154,111 +98,517 @@ mod updater_t {
             }
         }
     }
-    impl<T: Peb> Updater<T> {
-        pub fn run(
+    impl Test {
+        pub fn run_with_channels(
             mut self,
-        ) -> UpdaterHandle<T, impl pakka::ChannelSender<UpdaterMessage<T>>> {
-            let (tx, mut rx) = channel::<UpdaterMessage<T>>(100);
+            mut channels: Vec<Box<dyn pakka::Channel<TestTellMessage>>>,
+        ) -> TestHandle {
+            let (tx, mut rx) = channel::<TestMessage>(100);
+            tokio::spawn(async move {
+                let mut ctx = pakka::ActorCtx::new(rx);
+                loop {
+                    let mut remove_index = None;
+                    if channels.len() > 0 {
+                        let future = futures::future::select_all(
+                            channels.iter_mut().map(|channel| channel.recv().boxed()),
+                        );
+                        {
+                            #[doc(hidden)]
+                            mod __tokio_select_util {
+                                pub(super) enum Out<_0, _1> {
+                                    _0(_0),
+                                    _1(_1),
+                                    Disabled,
+                                }
+                                pub(super) type Mask = u8;
+                            }
+                            use ::tokio::macros::support::Future;
+                            use ::tokio::macros::support::Pin;
+                            use ::tokio::macros::support::Poll::{Ready, Pending};
+                            const BRANCHES: u32 = 2;
+                            let mut disabled: __tokio_select_util::Mask = Default::default();
+                            if !true {
+                                let mask: __tokio_select_util::Mask = 1 << 0;
+                                disabled |= mask;
+                            }
+                            if !true {
+                                let mask: __tokio_select_util::Mask = 1 << 1;
+                                disabled |= mask;
+                            }
+                            let mut output = {
+                                let mut futures = (ctx.rx.recv(), future);
+                                let mut futures = &mut futures;
+                                ::tokio::macros::support::poll_fn(|cx| {
+                                        let mut is_pending = false;
+                                        let start = {
+                                            ::tokio::macros::support::thread_rng_n(BRANCHES)
+                                        };
+                                        for i in 0..BRANCHES {
+                                            let branch;
+                                            #[allow(clippy::modulo_one)]
+                                            {
+                                                branch = (start + i) % BRANCHES;
+                                            }
+                                            match branch {
+                                                #[allow(unreachable_code)]
+                                                0 => {
+                                                    let mask = 1 << branch;
+                                                    if disabled & mask == mask {
+                                                        continue;
+                                                    }
+                                                    let (fut, ..) = &mut *futures;
+                                                    let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                                    let out = match Future::poll(fut, cx) {
+                                                        Ready(out) => out,
+                                                        Pending => {
+                                                            is_pending = true;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    disabled |= mask;
+                                                    #[allow(unused_variables)] #[allow(unused_mut)]
+                                                    match &out {
+                                                        msg => {}
+                                                        _ => continue,
+                                                    }
+                                                    return Ready(__tokio_select_util::Out::_0(out));
+                                                }
+                                                #[allow(unreachable_code)]
+                                                1 => {
+                                                    let mask = 1 << branch;
+                                                    if disabled & mask == mask {
+                                                        continue;
+                                                    }
+                                                    let (_, fut, ..) = &mut *futures;
+                                                    let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                                    let out = match Future::poll(fut, cx) {
+                                                        Ready(out) => out,
+                                                        Pending => {
+                                                            is_pending = true;
+                                                            continue;
+                                                        }
+                                                    };
+                                                    disabled |= mask;
+                                                    #[allow(unused_variables)] #[allow(unused_mut)]
+                                                    match &out {
+                                                        (result, index, _) => {}
+                                                        _ => continue,
+                                                    }
+                                                    return Ready(__tokio_select_util::Out::_1(out));
+                                                }
+                                                _ => {
+                                                    ::core::panicking::panic_fmt(
+                                                        format_args!(
+                                                            "internal error: entered unreachable code: {0}",
+                                                            format_args!(
+                                                                "reaching this means there probably is an off by one bug",
+                                                            ),
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        if is_pending {
+                                            Pending
+                                        } else {
+                                            Ready(__tokio_select_util::Out::Disabled)
+                                        }
+                                    })
+                                    .await
+                            };
+                            match output {
+                                __tokio_select_util::Out::_0(msg) => {
+                                    match msg {
+                                        Some(msg) => self.handle_message(msg, &mut ctx).await,
+                                        None => {
+                                            break;
+                                        }
+                                    }
+                                }
+                                __tokio_select_util::Out::_1((result, index, _)) => {
+                                    match result {
+                                        Ok(msg) => self.handle_tells(msg, &mut ctx).await,
+                                        Err(error) => {
+                                            {
+                                                ::std::io::_print(
+                                                    format_args!("Channel died, removing index: {0}\n", index),
+                                                );
+                                            };
+                                            remove_index = Some(index);
+                                        }
+                                    }
+                                }
+                                __tokio_select_util::Out::Disabled => {
+                                    ::core::panicking::panic_fmt(
+                                        format_args!(
+                                            "all branches are disabled and there is no else branch",
+                                        ),
+                                    );
+                                }
+                                _ => {
+                                    ::core::panicking::panic_fmt(
+                                        format_args!(
+                                            "internal error: entered unreachable code: {0}",
+                                            format_args!("failed to match bind"),
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(index) = remove_index {
+                            {
+                                ::std::io::_print(
+                                    format_args!(
+                                        "Channel died, removing index: {0}, length is: {1}\n",
+                                        index,
+                                        channels.len(),
+                                    ),
+                                );
+                            };
+                            channels.remove(index);
+                            {
+                                ::std::io::_print(
+                                    format_args!("Removed, now length {0}\n", channels.len()),
+                                );
+                            };
+                        }
+                    } else {
+                        let msg = ctx.rx.recv().await;
+                        match msg {
+                            Some(msg) => self.handle_message(msg, &mut ctx).await,
+                            None => {
+                                break;
+                            }
+                        }
+                    }
+                    if ctx.kill_flag {
+                        break;
+                    }
+                }
+                self.exit();
+            });
+            TestHandle { sender: tx }
+        }
+        pub fn run(mut self) -> TestHandle {
+            let (tx, mut rx) = channel::<TestMessage>(100);
             tokio::spawn(async move {
                 let mut ctx = pakka::ActorCtx::new(rx);
                 while let Some(msg) = ctx.rx.recv().await {
                     self.handle_message(msg, &mut ctx).await;
+                    if ctx.kill_flag {
+                        break;
+                    }
                 }
                 self.exit();
             });
-            UpdaterHandle {
-                sender: tx,
-                _phantom: Default::default(),
+            TestHandle { sender: tx }
+        }
+        
+
+        //Jerkku tsek here!!
+        pub fn runts(mut self) {
+
+            impl pakka::Actor for Test {
+                type Ask = TestAskMessage;
+                type Tell = TestTellMessage;
             }
+
+            let (tx, mut rx) = channel::<ActorMessage<TestAskMessage, TestTellMessage>>(100);
+
+            tokio::spawn(async move {
+                let mut ctx = pakka::ActorContext::<Test> {
+                    rx: Box::new(rx),
+                    extra_rxs: vec![],
+                    kill_flag: false,
+                };
+
+                while let Ok(msg) = ctx.rx.recv().await {
+                    self.handle_message(msg, &mut ctx).await;
+                    if ctx.kill_flag {
+                        break;
+                    }
+                }
+                self.exit();
+            });
+            TestHandle { sender: tx }
+
+        }
+
+
+        pub fn run_with_broadcast_receiver(
+            mut self,
+            mut broadcast_rx: tokio::sync::broadcast::Receiver<TestTellMessage>,
+        ) -> TestHandle {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<TestMessage>(100);
+            tokio::spawn(async move {
+                let mut ctx = pakka::ActorCtx::new(rx);
+                loop {
+                    {
+                        #[doc(hidden)]
+                        mod __tokio_select_util {
+                            pub(super) enum Out<_0, _1> {
+                                _0(_0),
+                                _1(_1),
+                                Disabled,
+                            }
+                            pub(super) type Mask = u8;
+                        }
+                        use ::tokio::macros::support::Future;
+                        use ::tokio::macros::support::Pin;
+                        use ::tokio::macros::support::Poll::{Ready, Pending};
+                        const BRANCHES: u32 = 2;
+                        let mut disabled: __tokio_select_util::Mask = Default::default();
+                        if !true {
+                            let mask: __tokio_select_util::Mask = 1 << 0;
+                            disabled |= mask;
+                        }
+                        if !true {
+                            let mask: __tokio_select_util::Mask = 1 << 1;
+                            disabled |= mask;
+                        }
+                        let mut output = {
+                            let mut futures = (ctx.rx.recv(), broadcast_rx.recv());
+                            let mut futures = &mut futures;
+                            ::tokio::macros::support::poll_fn(|cx| {
+                                    let mut is_pending = false;
+                                    let start = {
+                                        ::tokio::macros::support::thread_rng_n(BRANCHES)
+                                    };
+                                    for i in 0..BRANCHES {
+                                        let branch;
+                                        #[allow(clippy::modulo_one)]
+                                        {
+                                            branch = (start + i) % BRANCHES;
+                                        }
+                                        match branch {
+                                            #[allow(unreachable_code)]
+                                            0 => {
+                                                let mask = 1 << branch;
+                                                if disabled & mask == mask {
+                                                    continue;
+                                                }
+                                                let (fut, ..) = &mut *futures;
+                                                let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                                let out = match Future::poll(fut, cx) {
+                                                    Ready(out) => out,
+                                                    Pending => {
+                                                        is_pending = true;
+                                                        continue;
+                                                    }
+                                                };
+                                                disabled |= mask;
+                                                #[allow(unused_variables)] #[allow(unused_mut)]
+                                                match &out {
+                                                    msg => {}
+                                                    _ => continue,
+                                                }
+                                                return Ready(__tokio_select_util::Out::_0(out));
+                                            }
+                                            #[allow(unreachable_code)]
+                                            1 => {
+                                                let mask = 1 << branch;
+                                                if disabled & mask == mask {
+                                                    continue;
+                                                }
+                                                let (_, fut, ..) = &mut *futures;
+                                                let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                                let out = match Future::poll(fut, cx) {
+                                                    Ready(out) => out,
+                                                    Pending => {
+                                                        is_pending = true;
+                                                        continue;
+                                                    }
+                                                };
+                                                disabled |= mask;
+                                                #[allow(unused_variables)] #[allow(unused_mut)]
+                                                match &out {
+                                                    result => {}
+                                                    _ => continue,
+                                                }
+                                                return Ready(__tokio_select_util::Out::_1(out));
+                                            }
+                                            _ => {
+                                                ::core::panicking::panic_fmt(
+                                                    format_args!(
+                                                        "internal error: entered unreachable code: {0}",
+                                                        format_args!(
+                                                            "reaching this means there probably is an off by one bug",
+                                                        ),
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    if is_pending {
+                                        Pending
+                                    } else {
+                                        Ready(__tokio_select_util::Out::Disabled)
+                                    }
+                                })
+                                .await
+                        };
+                        match output {
+                            __tokio_select_util::Out::_0(msg) => {
+                                match msg {
+                                    Some(msg) => self.handle_message(msg, &mut ctx).await,
+                                    None => {
+                                        break;
+                                    }
+                                }
+                            }
+                            __tokio_select_util::Out::_1(result) => {
+                                match result {
+                                    Ok(msg) => self.handle_tells(msg, &mut ctx).await,
+                                    Err(err) => {
+                                        match err {
+                                            tokio::sync::broadcast::error::RecvError::Closed => {
+                                                break;
+                                            }
+                                            tokio::sync::broadcast::error::RecvError::Lagged(
+                                                skipped_messages,
+                                            ) => {
+                                                {
+                                                    ::std::io::_eprint(
+                                                        format_args!(
+                                                            "{0} broadcast receiver lagging, skipped: {1} messages\n",
+                                                            "Test",
+                                                            skipped_messages,
+                                                        ),
+                                                    );
+                                                };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            __tokio_select_util::Out::Disabled => {
+                                ::core::panicking::panic_fmt(
+                                    format_args!(
+                                        "all branches are disabled and there is no else branch",
+                                    ),
+                                );
+                            }
+                            _ => {
+                                ::core::panicking::panic_fmt(
+                                    format_args!(
+                                        "internal error: entered unreachable code: {0}",
+                                        format_args!("failed to match bind"),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    if ctx.kill_flag {
+                        break;
+                    }
+                }
+                self.exit();
+            });
+            TestHandle::new(tx)
         }
         fn exit(&self) {
             {
-                ::std::io::_print(format_args!("{0} actor task exiting\n", "Updater"));
+                ::std::io::_print(format_args!("{0} actor task exiting\n", "Test"));
             };
         }
         async fn handle_message(
             &mut self,
-            msg: UpdaterMessage<T>,
+            msg: TestMessage,
             mut _ctx: &mut pakka::ActorCtx<
-                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
-                UpdaterMessage<T>,
+                impl pakka::Channel<test::TestMessage>,
+                TestMessage,
             >,
         ) {
             match msg {
-                UpdaterMessage::Ask(ask_msg) => {
-                    self.handle_asks(ask_msg, &mut _ctx).await
-                }
-                UpdaterMessage::Tell(tell_msg) => {
+                TestMessage::Ask(ask_msg) => self.handle_asks(ask_msg, &mut _ctx).await,
+                TestMessage::Tell(tell_msg) => {
                     self.handle_tells(tell_msg, &mut _ctx).await
                 }
             }
         }
         async fn handle_asks(
             &mut self,
-            msg: UpdaterAskMessage<T>,
+            msg: TestAskMessage,
             mut _ctx: &mut pakka::ActorCtx<
-                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
-                UpdaterMessage<T>,
+                impl pakka::Channel<test::TestMessage>,
+                TestMessage,
             >,
         ) {
-            match msg {
-                UpdaterAskMessage::Update(resp) => {
-                    let result = self.update(&mut _ctx);
-                    let _ = resp.send(result);
-                }
-                UpdaterAskMessage::__Phantom(_) => {}
-            }
+            match msg {}
         }
         async fn handle_tells(
             &mut self,
-            msg: UpdaterTellMessage<T>,
+            msg: TestTellMessage,
             mut _ctx: &mut pakka::ActorCtx<
-                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
-                UpdaterMessage<T>,
+                impl pakka::Channel<test::TestMessage>,
+                TestMessage,
             >,
         ) {
             match msg {
-                UpdaterTellMessage::__Phantom(_) => {}
+                TestTellMessage::Ping() => {
+                    self.ping(&mut _ctx);
+                }
+                TestTellMessage::Test() => {
+                    self.test(&mut _ctx);
+                }
             }
         }
     }
-    impl<T: Peb, S> UpdaterHandle<T, S>
-    where
-        S: pakka::ChannelSender<UpdaterMessage<T>>,
-    {
-        pub fn new(sender: S) -> Self {
-            Self {
-                sender,
-                _phantom: Default::default(),
-            }
+    impl TestHandle {
+        pub fn new(sender: Sender<TestMessage>) -> Self {
+            Self { sender }
         }
-        pub async fn update(&self) -> Result<(u32), pakka::ActorError> {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            self.sender.send(UpdaterMessage::Ask(UpdaterAskMessage::Update(tx))).await?;
-            rx.await.map_err(Into::into)
+        pub async fn ping(&self) -> Result<(), pakka::ActorError> {
+            self.sender.send(TestMessage::Tell(TestTellMessage::Ping())).await?;
+            Ok(())
+        }
+        pub async fn test(&self) -> Result<(), pakka::ActorError> {
+            self.sender.send(TestMessage::Tell(TestTellMessage::Test())).await?;
+            Ok(())
         }
     }
 }
-pub use updater_t::*;
+pub use test::*;
 #[allow(dead_code)]
-impl<T: Peb> Updater<T> {
-    fn update(
-        &mut self,
+impl Test {
+    fn ping(
+        &self,
         _ctx: &mut pakka::ActorCtx<
-            impl pakka::Channel<updater_t::UpdaterMessage<T>>,
-            updater_t::UpdaterMessage<T>,
+            impl pakka::Channel<test::TestMessage>,
+            test::TestMessage,
         >,
-    ) -> u32 {
-        self.peb.update()
+    ) {
+        {
+            ::std::io::_print(format_args!("Received ping\n"));
+        }
+    }
+    fn test(
+        &self,
+        _ctx: &mut pakka::ActorCtx<
+            impl pakka::Channel<test::TestMessage>,
+            test::TestMessage,
+        >,
+    ) {
+        {
+            ::std::io::_print(format_args!("TEST!\n"));
+        };
     }
 }
 fn main() {
     let body = async {
-        let updater = Updater { peb: Test { frame: 0 } }.run();
-        let frame = updater.update().await.unwrap();
-        {
-            ::std::io::_print(format_args!("Frame {0}\n", frame));
-        }
+        let pinger = Box::new(
+            Interval::new(
+                tokio::time::interval(Duration::from_secs(1)),
+                TestTellMessage::Ping(),
+            ),
+        );
+        let handle = Test {}
+            .run_with_channels(
+                <[_]>::into_vec(#[rustc_box] ::alloc::boxed::Box::new([pinger])),
+            );
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        _ = handle.test().await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
     };
     #[allow(clippy::expect_used, clippy::diverging_sub_expression)]
     {

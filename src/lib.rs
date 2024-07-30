@@ -8,11 +8,28 @@ use channel::mpsc;
 use futures::FutureExt;
 pub use pakka_macro::messages;
 
+pub enum ActorMessage<Ask, Tell> {
+    Ask(Ask),
+    Tell(Tell),
+}
+
+pub trait Actor {
+    type Ask: Send;
+    type Tell: Clone + Send;
+}
+
+pub struct ActorContext<A: Actor> {
+    pub rx: Box<dyn Channel<ActorMessage<A::Ask, A::Tell>>>,
+    pub extra_rxs: Vec<Box<dyn Channel<A::Tell>>>,
+    pub kill_flag: bool,
+}
+
 pub struct ActorCtx<C, T> 
 where 
     C: Channel<T>
 {
     pub rx: C,
+    pub extra_rxs: Vec<Box<dyn Channel<T>>>,
     pub kill_flag: bool,
     _t: std::marker::PhantomData<T>
 }
@@ -23,7 +40,13 @@ where
 {
     pub fn new(rx: C) -> Self {
         Self {
-            rx, kill_flag: false, _t: Default::default()
+            rx, kill_flag: false, _t: Default::default(), extra_rxs: Default::default()
+        }
+    }
+
+    pub fn new_with_extras(rx: C, extra_rxs: Vec<Box<dyn Channel<T>>>) -> Self {
+        Self {
+            rx, kill_flag: false, _t: Default::default(), extra_rxs
         }
     }
 
@@ -62,7 +85,6 @@ impl From<RecvError> for ActorError {
 async fn test() -> SomeThing<Sender<ConcreteType>> {
     let (tx, mut rx) = channel::<ConcreteType>(100);
     let asd = rx.recv().await;
-
 
     let mut ctx = ActorCtx::new(rx);
     testad(&mut ctx).await;
@@ -108,7 +130,7 @@ async fn testtt<C, T>(ctx: &mut ActorCtx<C, T>) where C: Channel<T> { //channel:
     }
 }
 
-async fn return_concrete<T>() -> impl ChannelSender<T> {
+async fn return_concrete<T: Send + 'static>() -> impl ChannelSender<T> {
     let (tx, mut rx) = channel::<T>(100);
     tx
 }
@@ -133,14 +155,22 @@ where
     pub sender: S
 }
 
-pub trait ChannelSender<T> {
-    fn send(&self, msg: T) -> impl Future<Output = Result<(), ActorError>>;
+pub trait ChannelSender<T>: Send + Sync {
+    fn send(&self, msg: T) -> Pin<Box<dyn Future<Output = Result<(), ActorError>> + Send + '_>>;
 }
 
-impl <T> ChannelSender<T> for tokio::sync::mpsc::Sender<T> {
-    async fn send(&self, msg: T) -> Result<(), ActorError> {
-        Self::send(self, msg).await.map_err(|e| e.into())
+// Implement ChannelSender for tokio::sync::mpsc::Sender
+impl<T: Send + 'static> ChannelSender<T> for mpsc::Sender<T> {
+    fn send(&self, msg: T) -> Pin<Box<dyn Future<Output = Result<(), ActorError>> + Send + '_>> {
+        //let sender = self.clone(); // Clone the sender
+        Box::pin(async move {
+            self.send(msg).await.map_err(|e| e.into())
+        })
     }
+}
+
+pub struct Test<T> {
+    sender: Vec<Box<dyn ChannelSender<T>>>
 }
 
 pub trait Channel<T>: Send {
@@ -167,18 +197,35 @@ impl Channel<tokio::time::Instant> for tokio::time::Interval {
     }
 }
 
-pub struct Interval<Message: Clone + Send> {
+pub struct Interval<Message: Send> {
     pub interval: tokio::time::Interval,
     pub message: Message,
+    counter: u32,
 }
 
+impl <Message:  Send> Interval<Message>{
+    pub fn new(interval: tokio::time::Interval, message: Message) -> Self {
+        Self {
+            interval,
+            message,
+            counter: 0
+        }
+    }
+}
 
-impl <Message: Clone + Send> Channel<Message> for Interval<Message> {
+impl <Message: Send + Clone> Channel<Message> for Interval<Message> {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<Message, ActorError>> + Send + '_>> {
         Box::pin(async move {
+
+            self.counter += 1;
+            if self.counter > 5 {
+                return Err(ActorError::ActorClosed);
+            }
             let _ = self.interval.tick().await;
             Ok(self.message.clone())
         })
+        
     }
 }
 /* */
+

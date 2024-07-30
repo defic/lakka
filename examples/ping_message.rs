@@ -11,17 +11,19 @@ impl Test {
         println!("Received ping")
     }
     fn test(&self) {
-        println!("TEST!")
+        println!("TEST!");
+        //adds an timer:
+        //_ctx.extra_rxs.push(value)
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let pinger = Box::new(
-        Interval {
-            interval:tokio::time::interval(Duration::from_secs(1)),
-            message: TestTellMessage::Ping()
-        }
+    let pinger = 
+        Box::new(Interval::new(
+            tokio::time::interval(Duration::from_secs(1)),
+            TestTellMessage::Ping()
+        )
     );
     let handle = Test{}.run_with_channels(vec![pinger]);
     tokio::time::sleep(Duration::from_secs(2)).await;

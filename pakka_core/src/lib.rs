@@ -202,6 +202,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         mod #module_name {
             use pakka::channel::mpsc::{channel, Receiver, Sender};
             use std::marker::PhantomData;
+            use futures::stream::*;
             use futures::FutureExt;
 
             use super::*;
@@ -230,24 +231,9 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 Tell(#tell_enum_name #ty_generics),
             } #where_clause
 
+            //type ActorContext #impl_generics = pakka::ActorCtx<dyn pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #actor_enum_name #ty_generics>;
+            
             impl #impl_generics #self_ty #where_clause {
-
-                /* 
-                pub fn runs<S: pakka::ChannelSender<#actor_enum_name #ty_generics>, R: pakka::Channel<#module_name::#actor_enum_name #ty_generics> + Send + 'static>(mut self, (tx, rx): (S, R)) -> #handle_name #handle_ty_generics {
-                    tokio::spawn(async move {
-                        let mut ctx = pakka::ActorCtx::new(rx);
-                        while let Ok(msg) = ctx.rx.recv().await {
-                            self.handle_message(msg, &mut ctx).await;
-                            if ctx.kill_flag {
-                                break;
-                            }
-                        }
-                        self.exit();
-                    });
-
-                    #handle_name { sender: tx, _phantom: Default::default() }
-                }
-                */
 
                 pub fn run_with_channels(mut self, mut channels: Vec<Box<dyn pakka::Channel<#tell_enum_name #ty_generics>>>) -> #handle_name #ty_generics {
                     
@@ -257,29 +243,56 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                         let mut ctx = pakka::ActorCtx::new(rx);
 
                         loop {
-                            let future = futures::future::select_all(
-                                channels
-                                    .iter_mut()
-                                    .map(|channel| channel.recv().boxed()),
-                            );
+                            let mut remove_index = None;
 
-                            tokio::select! {
-                                msg = ctx.rx.recv() => {
-                                    //let mut ctx = pakka::ActorCtx::new(rx);
-                                    match msg {
-                                        Some(msg) => self.handle_message(msg, &mut ctx).await,
-                                        None => {
-                                            // The channel has closed, exit the loop
-                                            break;
+                            //If we should poll multiple channels
+                            if channels.len() > 0 {
+                                let future = futures::future::select_all(
+                                    channels
+                                        .iter_mut()
+                                        .map(|channel| channel.recv().boxed()),
+                                );
+    
+                                tokio::select! {
+                                    msg = ctx.rx.recv() => {
+                                        //let mut ctx = pakka::ActorCtx::new(rx);
+                                        match msg {
+                                            Some(msg) => self.handle_message(msg, &mut ctx).await,
+                                            None => {
+                                                // The channel has closed, exit the loop
+                                                break;
+                                            }
+                                        }
+                                    },
+                                    (result, index, _) = future => {
+                                        match result {
+                                            Ok(msg) => self.handle_tells(msg, &mut ctx).await,
+                                            Err(error) => {
+                                                println!("Channel died, removing index: {}", index);
+                                                remove_index = Some(index);
+                                            }
                                         }
                                     }
-                                },
-                                (result, index, _) = future => {
-                                    match result {
-                                        Ok(msg) => self.handle_tells(msg, &mut ctx).await,
-                                        Err(error) => println!("remove index {}", index),
+                                }
+                                if let Some(index) = remove_index {
+                                    println!("Channel died, removing index: {}, length is: {}", index, channels.len() );
+                                    channels.remove(index);
+                                    println!("Removed, now length {}", channels.len() );
+                                }
+                            }
+                            else {
+                                let msg = ctx.rx.recv().await;
+                                match msg {
+                                    Some(msg) => self.handle_message(msg, &mut ctx).await,
+                                    None => {
+                                        // The channel has closed, exit the loop
+                                        break;
                                     }
                                 }
+                            }
+
+                            if ctx.kill_flag {
+                                break;
                             }
                         }
 
@@ -305,36 +318,6 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
                     #handle_name { sender: tx }
                 }
-
-                //overwhelmed rn, idk what to do
-                /* 
-                pub fn run(mut self) -> #handle_name #ty_generics { 
-                    let (tx, mut rx) = channel(100);
-                    self.runs(tx, rx)
-                }
-                */
-
-                /* 
-                pub fn run_tokio(mut self) -> #handle_name <#handle_ty_generics tokio::sync::mpsc::Sender<#actor_enum_name #ty_generics>> {
-                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
-                    self.runs(tx, rx)
-                }
-
-                pub fn run(mut self) -> #handle_name #handle_ty_generics {
-                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
-                    self.runs(tx, rx)
-                }
-                */
-
-                /* 
-                pub fn run_with_channel(mut self, tx: impl pakka::ChannelSender<#ty_generics>) {
-                    
-                }
-                */
-
-                
-                // Broadcasts can only receive tells.
-                //pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
 
                 pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
                     
