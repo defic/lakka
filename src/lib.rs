@@ -58,19 +58,34 @@ impl From<RecvError> for ActorError {
     }
 }
 
-async fn test()
-{
+async fn test() -> SomeThing<Sender<ConcreteType>> {
     let (tx, mut rx) = channel::<ConcreteType>(100);
     let asd = rx.recv().await;
 
-    if let Some(msg) = rx.recv().await {
-        let mut ctx = ActorCtx::new(rx);
-        borrowing_function(msg, &mut ctx);
-    }
+
+    let mut ctx = ActorCtx::new(rx);
+    testad(&mut ctx).await;
+
 
     let k = SomeThing {
         sender: tx
     };
+    k
+}
+
+async fn testad<C, T>(ctx: &mut ActorCtx<C, T>) where C: Channel<T> {
+    testtt(ctx).await;
+}
+
+async fn testtt<C, T>(ctx: &mut ActorCtx<C, T>) where C: Channel<T> { //channel: &impl Channel<T>) {
+    if let Ok(msg) = ctx.rx.recv().await {
+        borrowing_function(msg, ctx);
+    }
+}
+
+async fn return_concrete<T>() -> impl ChannelSender<T> {
+    let (tx, mut rx) = channel::<T>(100);
+    tx
 }
 
 

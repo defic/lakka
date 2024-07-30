@@ -45,8 +45,8 @@ impl SimpleTest {
 #[tokio::main]
 async fn main() -> Result<(), ActorError> {
 
-    let channel = tokio::sync::mpsc::channel(100);
-    let asd = SimpleTest::new().runs(channel);
+    //let channel = tokio::sync::mpsc::channel(100);
+    let asd = SimpleTest::new().run();//s(channel);
     
     asd.set_last_value("innit".into()).await?;
     asd.print().await?;

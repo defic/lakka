@@ -206,9 +206,8 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             use super::*;
 
             #[derive(Clone, Debug)]
-            pub struct #handle_name #handle_impl_generics #handle_where_clause {
-                sender: S,
-                _phantom: std::marker::PhantomData<#actor_enum_name #ty_generics>,
+            pub struct #handle_name #impl_generics #where_clause {
+                sender: Sender<#actor_enum_name #ty_generics>,
             }
 
             #[derive(Debug)]
@@ -232,6 +231,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
             impl #impl_generics #self_ty #where_clause {
 
+                /* 
                 pub fn runs<S: pakka::ChannelSender<#actor_enum_name #ty_generics>, R: pakka::Channel<#module_name::#actor_enum_name #ty_generics> + Send + 'static>(mut self, (tx, rx): (S, R)) -> #handle_name #handle_ty_generics {
                     tokio::spawn(async move {
                         let mut ctx = pakka::ActorCtx::new(rx);
@@ -245,6 +245,24 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     });
 
                     #handle_name { sender: tx, _phantom: Default::default() }
+                }
+                */
+
+                pub fn run(mut self) -> #handle_name #ty_generics {
+                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
+                    
+                    tokio::spawn(async move {
+                        let mut ctx = pakka::ActorCtx::new(rx);
+                        while let Some(msg) = ctx.rx.recv().await {
+                            self.handle_message(msg, &mut ctx).await;
+                            if ctx.kill_flag {
+                                break;
+                            }
+                        }
+                        self.exit();
+                    });
+
+                    #handle_name { sender: tx }
                 }
 
                 //overwhelmed rn, idk what to do
@@ -276,10 +294,10 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 
                 // Broadcasts can only receive tells.
                 //pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
-                /* 
-                pub fn run_with_broadcast_receiver<S: pakka::ChannelSender<#actor_enum_name #ty_generics>>(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name<S> {
-                    let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);
+
+                pub fn run_with_broadcast_receiver(mut self, mut broadcast_rx: tokio::sync::broadcast::Receiver<#tell_enum_name #ty_generics>) -> #handle_name #ty_generics {
                     
+                    let (tx, mut rx) = tokio::sync::mpsc::channel::<#actor_enum_name #ty_generics>(100);   
                     tokio::spawn(async move {
                         let mut ctx = pakka::ActorCtx::new(rx);
                         loop {
@@ -318,9 +336,9 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                         self.exit();
                     });
 
-                    #handle_name { sender: tx, _phantom: Default::default() }
+                    #handle_name::new(tx)
                 }
-                */
+                
 
                 fn exit(&self) {
                     println!("{} actor task exiting", #name_string);
@@ -348,11 +366,10 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
-            impl #handle_impl_generics #handle_name #handle_ty_generics #handle_where_clause {
-                pub fn new(sender: S) -> Self {
+            impl #impl_generics #handle_name #ty_generics #where_clause {
+                pub fn new(sender: Sender<#actor_enum_name #ty_generics>) -> Self {
                     Self {
                         sender,
-                        _phantom: Default::default(),
                     }
                 }
                 #handle_methods

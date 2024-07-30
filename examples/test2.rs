@@ -155,23 +155,70 @@ mod updater_t {
         }
     }
     impl<T: Peb> Updater<T> {
-        pub fn runs<
-            S: pakka::ChannelSender<UpdaterMessage<T>>,
-            R: pakka::Channel<updater_t::UpdaterMessage<T>> + Send + 'static,
-        >(mut self, tx: S, rx: R) -> UpdaterHandle<T, S> {
+        pub fn run(
+            mut self,
+        ) -> UpdaterHandle<T, impl pakka::ChannelSender<UpdaterMessage<T>>> {
+            let (tx, mut rx) = channel::<UpdaterMessage<T>>(100);
             tokio::spawn(async move {
                 let mut ctx = pakka::ActorCtx::new(rx);
-                while let Ok(msg) = ctx.rx.recv().await {
+                while let Some(msg) = ctx.rx.recv().await {
                     self.handle_message(msg, &mut ctx).await;
-                    if ctx.kill_flag {
-                        break;
-                    }
                 }
                 self.exit();
             });
             UpdaterHandle {
                 sender: tx,
                 _phantom: Default::default(),
+            }
+        }
+        fn exit(&self) {
+            {
+                ::std::io::_print(format_args!("{0} actor task exiting\n", "Updater"));
+            };
+        }
+        async fn handle_message(
+            &mut self,
+            msg: UpdaterMessage<T>,
+            mut _ctx: &mut pakka::ActorCtx<
+                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
+                UpdaterMessage<T>,
+            >,
+        ) {
+            match msg {
+                UpdaterMessage::Ask(ask_msg) => {
+                    self.handle_asks(ask_msg, &mut _ctx).await
+                }
+                UpdaterMessage::Tell(tell_msg) => {
+                    self.handle_tells(tell_msg, &mut _ctx).await
+                }
+            }
+        }
+        async fn handle_asks(
+            &mut self,
+            msg: UpdaterAskMessage<T>,
+            mut _ctx: &mut pakka::ActorCtx<
+                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
+                UpdaterMessage<T>,
+            >,
+        ) {
+            match msg {
+                UpdaterAskMessage::Update(resp) => {
+                    let result = self.update(&mut _ctx);
+                    let _ = resp.send(result);
+                }
+                UpdaterAskMessage::__Phantom(_) => {}
+            }
+        }
+        async fn handle_tells(
+            &mut self,
+            msg: UpdaterTellMessage<T>,
+            mut _ctx: &mut pakka::ActorCtx<
+                impl pakka::Channel<updater_t::UpdaterMessage<T>>,
+                UpdaterMessage<T>,
+            >,
+        ) {
+            match msg {
+                UpdaterTellMessage::__Phantom(_) => {}
             }
         }
     }
