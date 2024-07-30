@@ -1,10 +1,11 @@
 
-use std::{fmt, future::Future, marker::PhantomData};
+use std::{fmt, future::Future, marker::PhantomData, pin::Pin};
 pub mod channel;
 pub use self::channel::mpsc::*;
 
 
 use channel::mpsc;
+use futures::FutureExt;
 pub use pakka_macro::messages;
 
 pub struct ActorCtx<C, T> 
@@ -73,6 +74,30 @@ async fn test() -> SomeThing<Sender<ConcreteType>> {
     k
 }
 
+async fn many_channels() {
+    let mut senders = vec![];
+    let mut channels: Vec<Box<dyn Channel<u32>>>  = vec![];
+    for _ in 0..10 {
+        let ch = channel::<u32>(1);
+        senders.push(ch.0);
+        channels.push(Box::new(ch.1));
+    }
+
+    let (result, index, _) = futures::future::select_all(
+        channels
+            .iter_mut()
+            // note: `FutureExt::boxed` is called here because `select_all`
+            //       requires the futures to be pinned
+            .map(|listener| listener.recv().boxed()),
+    ).await;
+
+    match result {
+        Ok(_) => todo!(),
+        Err(_) => todo!(),
+    }
+
+}
+
 async fn testad<C, T>(ctx: &mut ActorCtx<C, T>) where C: Channel<T> {
     testtt(ctx).await;
 }
@@ -92,8 +117,6 @@ async fn return_concrete<T>() -> impl ChannelSender<T> {
 fn borrowing_function<T>(msg: T, ctx: &mut ActorCtx<impl Channel<T>, T>) {
     // If some condition is met, close the receiver
     ctx.shut_down_actor();
-
-
 }
 
 pub struct Assh<T, C: ChannelSender<T>> {
@@ -120,40 +143,42 @@ impl <T> ChannelSender<T> for tokio::sync::mpsc::Sender<T> {
     }
 }
 
-
-pub trait Channel<T> {
-    fn recv(&mut self) -> impl Future<Output = Result<T, ActorError>> + Send;
+pub trait Channel<T>: Send {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>>;
 }
 
-
-impl<T: Send> Channel<T> for tokio::sync::mpsc::Receiver<T> {
-
-    async fn recv(&mut self) -> Result<T, ActorError> {
-        match self.recv().await {
-            Some(value) => Ok(value),
-            None => Err(ActorError::ActorClosed),
-        }
+impl<T: Send + 'static> Channel<T> for mpsc::Receiver<T> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
+        Box::pin(async move {
+            match self.recv().await {
+                Some(value) => Ok(value),
+                None => Err(ActorError::ActorClosed),
+            }
+        })
     }
 }
 
 impl Channel<tokio::time::Instant> for tokio::time::Interval {
-    async fn recv(&mut self) -> Result<tokio::time::Instant, ActorError> {
-        let res = self.tick().await;
-        Ok(res)
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<tokio::time::Instant, ActorError>> + Send + '_>> {
+        Box::pin(async move {
+            let res = self.tick().await;
+            Ok(res)
+        })
     }
 }
 
-struct Interval<Message: Clone> {
-    interval: tokio::time::Interval,
-    message: Message,
+pub struct Interval<Message: Clone + Send> {
+    pub interval: tokio::time::Interval,
+    pub message: Message,
 }
 
-/* 
-impl <Message: Clone> Channel<Message> for Interval<Message> {
 
-    async fn recv(&mut self) -> Result<Message, ActorError> {
-        let _ = self.interval.tick().await;
-        Ok(self.message.clone())
+impl <Message: Clone + Send> Channel<Message> for Interval<Message> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<Message, ActorError>> + Send + '_>> {
+        Box::pin(async move {
+            let _ = self.interval.tick().await;
+            Ok(self.message.clone())
+        })
     }
 }
-*/
+/* */

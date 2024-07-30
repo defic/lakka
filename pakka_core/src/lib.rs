@@ -202,6 +202,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         mod #module_name {
             use pakka::channel::mpsc::{channel, Receiver, Sender};
             use std::marker::PhantomData;
+            use futures::FutureExt;
 
             use super::*;
 
@@ -247,6 +248,46 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     #handle_name { sender: tx, _phantom: Default::default() }
                 }
                 */
+
+                pub fn run_with_channels(mut self, mut channels: Vec<Box<dyn pakka::Channel<#tell_enum_name #ty_generics>>>) -> #handle_name #ty_generics {
+                    
+                    let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
+                    
+                    tokio::spawn(async move {
+                        let mut ctx = pakka::ActorCtx::new(rx);
+
+                        loop {
+                            let future = futures::future::select_all(
+                                channels
+                                    .iter_mut()
+                                    .map(|channel| channel.recv().boxed()),
+                            );
+
+                            tokio::select! {
+                                msg = ctx.rx.recv() => {
+                                    //let mut ctx = pakka::ActorCtx::new(rx);
+                                    match msg {
+                                        Some(msg) => self.handle_message(msg, &mut ctx).await,
+                                        None => {
+                                            // The channel has closed, exit the loop
+                                            break;
+                                        }
+                                    }
+                                },
+                                (result, index, _) = future => {
+                                    match result {
+                                        Ok(msg) => self.handle_tells(msg, &mut ctx).await,
+                                        Err(error) => println!("remove index {}", index),
+                                    }
+                                }
+                            }
+                        }
+
+                        self.exit();
+                    });
+
+                    #handle_name { sender: tx }
+                }
 
                 pub fn run(mut self) -> #handle_name #ty_generics {
                     let (tx, mut rx) = channel::<#actor_enum_name #ty_generics>(100);
