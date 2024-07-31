@@ -7,8 +7,10 @@ pub use self::channel::mpsc::*;
 use channel::mpsc;
 use futures::FutureExt;
 pub use pakka_macro::messages;
+use tokio::sync::broadcast;
 
-pub enum ActorMessage<Ask, Tell> {
+#[derive(Debug)]
+pub enum Message<Ask, Tell> {
     Ask(Ask),
     Tell(Tell),
 }
@@ -18,10 +20,112 @@ pub trait Actor {
     type Tell: Clone + Send;
 }
 
-pub struct ActorContext<A: Actor> {
-    pub rx: Box<dyn Channel<ActorMessage<A::Ask, A::Tell>>>,
+pub trait ActorMessage: Actor {
+    type Message: Send;
+}
+
+impl<T: Actor> ActorMessage for T {
+    type Message = Message<T::Ask, T::Tell>;
+}
+
+pub struct ActorContext<A>
+where 
+    A: Actor + ActorMessage
+{
+    pub rx: Box<dyn Channel<Message<A::Ask, A::Tell>>>,
     pub extra_rxs: Vec<Box<dyn Channel<A::Tell>>>,
     pub kill_flag: bool,
+}
+
+impl <A: Actor + ActorMessage> ActorContext<A> {
+    pub fn new(rx: Box<dyn Channel<Message<A::Ask, A::Tell>>>) -> Self {
+        Self {
+            rx, extra_rxs: vec![], kill_flag: false,
+        }
+    }
+
+    pub fn shut_down_actor(&mut self) {
+        self.kill_flag = true;
+    }
+}
+
+struct GenericActor<T> {
+    field: T
+}
+
+impl <T> Actor for GenericActor<T> {
+    type Ask = Asks;
+    type Tell = Tells;
+}
+
+type Msg<T> = Message<<GenericActor<T> as Actor>::Ask, <GenericActor<T> as Actor>::Tell>;
+
+impl<T> GenericActor<T>
+where
+    T: Send, // or any other bounds required on T
+    //GenericActor<T>: Actor + ActorMessage<Message = Message<Asks, Tells>>,
+{
+    pub fn solves(&self, msg: Msg<T>) {
+        match msg {
+            Message::Ask(msg) => self.ask(msg),
+            Message::Tell(msg) => self.tell(msg),
+        }
+    }
+
+    pub fn ask(&self, msg: Asks) {
+        match msg {
+            Asks::One => todo!(),
+            Asks::Two => todo!(),
+        }
+    }
+
+    pub fn tell(&self, msg: Tells) {
+        match msg {
+            Tells::Four => todo!(),
+            Tells::Five => todo!(),
+        }
+    }
+}
+
+
+pub enum Asks {
+    One,
+    Two
+}
+#[derive(Clone)]
+pub enum Tells {
+    Four,
+    Five
+}
+struct TestActor {}
+
+impl TestActor where TestActor: Actor + ActorMessage {
+
+    pub fn solve(msg: <Self as ActorMessage>::Message) {
+        match msg {
+            Message::Ask(ask) => Self::ask(ask),
+            Message::Tell(tell) => Self::tell(tell),
+        }
+    }
+
+    pub fn ask(msg: Asks) {
+        match msg {
+            Asks::One => todo!(),
+            Asks::Two => todo!(),
+        }
+    }
+
+    pub fn tell(msg: <Self as Actor>::Tell) {
+        match msg {
+            Tells::Four => todo!(),
+            Tells::Five => todo!(),
+        }
+    }
+}
+
+impl Actor for TestActor {
+    type Ask = Asks;
+    type Tell = Tells;
 }
 
 pub struct ActorCtx<C, T> 
@@ -183,6 +287,23 @@ impl<T: Send + 'static> Channel<T> for mpsc::Receiver<T> {
             match self.recv().await {
                 Some(value) => Ok(value),
                 None => Err(ActorError::ActorClosed),
+            }
+        })
+    }
+}
+
+impl<T: Send + 'static + Clone> Channel<T> for broadcast::Receiver<T> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
+        Box::pin(async move {
+            match broadcast::Receiver::recv(self).await {
+                Ok(value) => Ok(value),
+                Err(err) => match err {
+                    tokio::sync::broadcast::error::RecvError::Closed => Err(ActorError::ActorClosed),
+                    tokio::sync::broadcast::error::RecvError::Lagged(x) => {
+                        eprint!("Lagged!: {}", x);
+                        Err(ActorError::ActorClosed) //TODO: FIX
+                    },
+                }
             }
         })
     }

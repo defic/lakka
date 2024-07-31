@@ -27,7 +27,11 @@ impl Broadcaster {
 
     fn create_listener(&mut self) ->  BroadcastListenerHandle {
         self.amount_created += 1;
-        BroadcastListener {}.run_with_broadcast_receiver(self.broadcast_sender.subscribe())
+
+        let ch = Box::new(self.broadcast_sender.subscribe());
+        
+        BroadcastListener {}.run_with_channels(vec![ch])
+        //BroadcastListener {}.run_with_broadcast_receiver()
     }
 }
 

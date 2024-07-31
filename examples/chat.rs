@@ -67,7 +67,8 @@ impl Chat {
 
     async fn join(&mut self, name: String, addr: SocketAddr, sock: Arc<UdpSocket>, chat_handle: ChatHandle) -> ChatUserHandle {
         self.broadcast(format!("{} joined", name)).await;
-        let user_handle = ChatUser {name, addr, sock, chat_handle}.run_with_broadcast_receiver(self.broadcast_sender.subscribe());
+        let ch = Box::new(self.broadcast_sender.subscribe());
+        let user_handle = ChatUser {name, addr, sock, chat_handle}.run_with_channels(vec![ch]);
         self.users.push(user_handle.clone());
         user_handle
     }
