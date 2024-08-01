@@ -1,6 +1,5 @@
 use pakka::messages;
 
-
 struct Actor {
 
 }

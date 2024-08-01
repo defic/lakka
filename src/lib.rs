@@ -7,7 +7,7 @@ pub use self::channel::mpsc::*;
 use channel::mpsc;
 use futures::FutureExt;
 pub use pakka_macro::messages;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 
 #[derive(Debug)]
 pub enum Message<Ask, Tell> {
@@ -40,7 +40,7 @@ pub trait Actor: Sized + Send + 'static {
         self.run_with_channels(vec![])
     }
 
-    fn run_with_channels(mut self, mut extra_rxs: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>) -> Self::Handle { 
+    fn run_with_channels(mut self, mut channels: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>) -> Self::Handle { 
         let (tx, mut rx) = channel::<<Self as ActorMessage>::Message>(100);
 
         tokio::spawn(async move {
@@ -51,11 +51,16 @@ pub trait Actor: Sized + Send + 'static {
             };
 
             loop {
+                // Move any added extra channels to be polled
+                if !ctx.extra_rxs.is_empty() {
+                    channels.append(&mut ctx.extra_rxs);
+                }
+
                 let mut remove_index: Option<usize> = None;
                 //If we should poll multiple channels
-                if !extra_rxs.is_empty() {
+                if !channels.is_empty() {
                     let future = futures::future::select_all(
-                        extra_rxs
+                        channels
                             .iter_mut()
                             .map(|channel| channel.recv().boxed()),
                     );
@@ -75,7 +80,7 @@ pub trait Actor: Sized + Send + 'static {
                             match result {
                                 Ok(msg) => self.handle_tells(msg, &mut ctx).await,
                                 Err(error) => {
-                                    println!("Channel died, removing index: {}", index);
+                                    println!("Channel died, removing index: {}, error: {}", index, error);
                                     remove_index = Some(index);
                                 }
                             }
@@ -83,7 +88,7 @@ pub trait Actor: Sized + Send + 'static {
                     }
                     if let Some(index) = remove_index {
                         println!("Channel died, removing index: {}, length is: {}", index, ctx.extra_rxs.len() );
-                        extra_rxs.remove(index);
+                        channels.remove(index);
                         println!("Removed, now length {}", ctx.extra_rxs.len() );
                     }
                 }
@@ -136,6 +141,16 @@ impl <A: Actor + ActorMessage> ActorContext<A> {
 
     pub fn shut_down_actor(&mut self) {
         self.kill_flag = true;
+    }
+
+    //* Takes Tell that will be processed later, once */
+    pub fn tell(&mut self, msg: A::Tell) {
+        self.extra_rxs.push(Box::new(Some(msg)));
+    }
+
+    //* Adds extra channels that'll be used to receive Tells from */
+    pub fn add_channel(&mut self, channel: Box<dyn Channel<A::Tell>>) {
+        self.extra_rxs.push(channel);
     }
 }
 
@@ -392,7 +407,39 @@ pub trait Channel<T>: Send {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>>;
 }
 
-impl<T: Send + 'static> Channel<T> for mpsc::Receiver<T> {
+
+pub struct PostponeChannel<T>(Option<T>);
+
+impl <T: Send> PostponeChannel<T> {
+    pub fn new(content: T) -> Self {
+        Self (Some(content))
+    }
+}
+
+impl<T: Send> Channel<T> for PostponeChannel<T> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
+        let res = self.0.take();
+        let res = match res {
+            Some(value) => Ok(value),
+            None => Err(ActorError::ActorClosed),
+        };
+        Box::pin(std::future::ready(res))
+    }
+}
+
+impl<T: Send> Channel<T> for Option<T> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
+        let res = self.take();
+        let res = match res {
+            Some(value) => Ok(value),
+            None => Err(ActorError::ActorClosed),
+        };
+        Box::pin(std::future::ready(res))
+    }
+}
+
+
+impl<T: Send> Channel<T> for mpsc::Receiver<T> {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
         Box::pin(async move {
             match self.recv().await {
@@ -403,7 +450,7 @@ impl<T: Send + 'static> Channel<T> for mpsc::Receiver<T> {
     }
 }
 
-impl<T: Send + 'static + Clone> Channel<T> for broadcast::Receiver<T> {
+impl<T: Send + Clone> Channel<T> for broadcast::Receiver<T> {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
         Box::pin(async move {
             match broadcast::Receiver::recv(self).await {
@@ -435,7 +482,7 @@ pub struct Interval<Message: Send> {
     counter: u32,
 }
 
-impl <Message:  Send> Interval<Message>{
+impl <Message: Send> Interval<Message>{
     pub fn new(interval: tokio::time::Interval, message: Message) -> Self {
         Self {
             interval,
