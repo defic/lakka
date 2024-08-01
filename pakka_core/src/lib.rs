@@ -1,6 +1,9 @@
 use proc_macro2::TokenStream;
+use syn::{ItemImpl, Type, GenericArgument, PathArguments};
+use proc_macro2::TokenStream as TokenStream2;
+
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse_quote, FnArg, ImplItem, ItemImpl, ItemStruct, Pat, Receiver, Type, WhereClause, WherePredicate};
+use syn::{parse_quote, FnArg, GenericParam, ImplItem, ItemStruct, Pat, Receiver, WhereClause, WherePredicate};
 use proc_macro2::Span;
 
 
@@ -29,6 +32,32 @@ fn to_snake_case(s: &str) -> String {
         snake.push(ch.to_ascii_lowercase());
     }
     snake
+}
+
+
+fn extract_generic_types(item_impl: &ItemImpl) -> TokenStream {
+    if let Type::Path(type_path) = &*item_impl.self_ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if let PathArguments::AngleBracketed(generic_args) = &segment.arguments {
+                let types: Vec<_> = generic_args.args.iter().collect();
+                if !types.is_empty() {
+                    return quote!(<#(#types),*>);
+                }
+            }
+        }
+    }
+    quote!()
+}
+
+fn extract_generic_params(item_impl: &ItemImpl) -> Vec<GenericArgument> {
+    if let Type::Path(type_path) = &*item_impl.self_ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if let PathArguments::AngleBracketed(generic_args) = &segment.arguments {
+                return generic_args.args.iter().cloned().collect();
+            }
+        }
+    }
+    vec![]
 }
 
 pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -62,15 +91,55 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let generics = &input.generics;
+
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let has_generics = !generics.params.is_empty();
     let self_ty = &input.self_ty;
 
     let type_string = quote! { #full_type }.to_string().replace([' ', '<', '>'], "").replace("::", "");
     let ask_enum_name = format_ident!("{}AskMessage", name);
     let tell_enum_name = format_ident!("{}TellMessage", name);
+    let message_name = format_ident!("{}Message", name);
     //let actor_enum_name = format_ident!("{}Message", name);
+
     let handle_name = format_ident!("{}Handle", name);
+    let generic_params = extract_generic_params(&input);
+    let generic_types = extract_generic_types(&input);
+
+    let type_always = if !ty_generics.to_token_stream().is_empty() {
+        quote!( #ty_generics )
+    } else {
+        generic_types.clone()
+    };
+
+    let impl_generics_over_generic_types = if !impl_generics.to_token_stream().is_empty() {
+        quote!( #impl_generics )
+    } else {
+        generic_types.clone()
+    };
+
+    //let prefer_ty_generics = 
+
+    //let handle_name = quote! { #handle_name #generic_types };
+
+     // Generate PhantomData fields for generic parameters for ActorHandle
+     let phantom_types: Vec<_> = generic_params.iter().map(|param| {
+        match param {
+            GenericArgument::Type(ty) => quote! { std::marker::PhantomData<#ty> },
+            GenericArgument::Lifetime(lifetime) => quote! { std::marker::PhantomData<&#lifetime ()> },
+            _ => quote! { },  // Ignore other cases
+        }
+    }).collect();
+
+    // Generate PhantomData field initializers for the constructor
+    let (phantom_field, phantom_init, enum_phantom_field) = if phantom_types.is_empty() {
+        (quote! { }, quote! { }, quote! { })
+    } else {
+        (
+            quote! { _phantom: (#(#phantom_types),*), },
+            quote! { _phantom: Default::default(), },
+            quote! { _Phantom(#(#phantom_types),*) }
+        )
+    };
 
     let module_name = format_ident!("{}", to_snake_case(&type_string));
 
@@ -164,37 +233,37 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
-    let handle_ask_enum_phantom = has_generics.then(|| {
+    let handle_ask_enum_phantom = (!phantom_types.is_empty()).then(|| {
         quote! {
-            #ask_enum_name::__Phantom(_) => (),
+            #ask_enum_name::_Phantom(_) => (),
         }
     });
 
-    let handle_tell_enum_phantom = has_generics.then(|| {
+    let handle_tell_enum_phantom = (!phantom_types.is_empty()).then(|| {
         quote! {
-            #tell_enum_name::__Phantom(_) => (),
+            #tell_enum_name::_Phantom(_) => (),
         }
     });
 
-    let enum_phantom_field = has_generics.then(|| {
+    /*
+    let enum_phantom_field = (!ty_generics.to_token_stream().is_empty()).then(|| {
         quote! {
             #[doc(hidden)]
             __Phantom(PhantomData #ty_generics),
         }
     });
+     */
 
     let name_string = name.to_string();
 
     let expanded = quote! {
         mod #module_name {
-            use std::marker::PhantomData;
-
             use super::*;
 
             impl #impl_generics pakka::Actor for #self_ty {
-                type Ask = #ask_enum_name #ty_generics;
-                type Tell = #tell_enum_name #ty_generics;
-                type Handle = #handle_name #ty_generics;
+                type Ask = #ask_enum_name #type_always;
+                type Tell = #tell_enum_name #type_always;
+                type Handle = #handle_name #type_always;
 
                 async fn handle_asks(&mut self, msg: Self::Ask, mut _ctx: &mut pakka::ActorContext<Self>) {
                     match msg {
@@ -212,40 +281,41 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             #[derive(Clone, Debug)]
-            pub struct #handle_name #impl_generics #where_clause {
-                sender: Box<dyn pakka::ChannelSender<Message #ty_generics>>,
+            pub struct #handle_name #impl_generics_over_generic_types #where_clause {
+                sender: Box<dyn pakka::ChannelSender<#message_name #ty_generics>>,
+                #phantom_field
             }
 
-            //impl #impl_generics #handle_name #ty_generics #where_clause {
+            impl #impl_generics #handle_name #type_always #where_clause {
+                
+                #handle_methods
+            }
 
-            impl #impl_generics pakka::ActorHandle<Message #ty_generics> for #handle_name #ty_generics #where_clause {
-                fn new(tx: Box<dyn pakka::ChannelSender<Message #ty_generics>>) -> Self {
+
+            impl #impl_generics pakka::ActorHandle<#message_name #ty_generics> for #handle_name #type_always #where_clause {
+                fn new(tx: Box<dyn pakka::ChannelSender<#message_name #ty_generics>>) -> Self {
                     Self {
-                        sender: tx
+                        sender: tx,
+                        #phantom_init
                     }
                 }
             }
 
 
             #[derive(Debug)]
-            pub enum #ask_enum_name #impl_generics {
+            pub enum #ask_enum_name #impl_generics_over_generic_types {
                 #ask_variants
                 #enum_phantom_field
             } #where_clause
 
             // Tells are clonable for broadcasts
             #[derive(Debug, Clone)]
-            pub enum #tell_enum_name #impl_generics {
+            pub enum #tell_enum_name #impl_generics_over_generic_types {
                 #tell_variants
                 #enum_phantom_field
             } #where_clause
 
-            type Message #ty_generics = pakka::Message<<#self_ty as pakka::Actor>::Ask, <#self_ty as pakka::Actor>::Tell>;
-
-            impl #impl_generics #handle_name #ty_generics #where_clause {
-                
-                #handle_methods
-            }
+            type #message_name #ty_generics = pakka::Message<<#self_ty as pakka::Actor>::Ask, <#self_ty as pakka::Actor>::Tell>;
         }
 
         pub use #module_name::*;

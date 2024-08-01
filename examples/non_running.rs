@@ -1,8 +1,6 @@
 use pakka::messages;
 
-struct Actor {
-
-}
+struct Actor;
 
 #[messages]
 impl Actor {
@@ -17,7 +15,7 @@ impl Actor {
 
 #[tokio::main]
 async fn main(){
-    let test = Actor{};
+    let _ = Actor;
     //let handle = test.run();
     //_ = handle.test().await;
     //_ = handle.get().await;
