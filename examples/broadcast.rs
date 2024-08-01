@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::{messages, ActorError};
+use pakka::{messages, Actor, ActorError};
 
 
 struct Broadcaster {

@@ -1,6 +1,6 @@
 use std::{collections::{hash_map::Entry, HashMap}, net::SocketAddr, sync::Arc, time::{Duration, Instant}};
 
-use pakka::messages;
+use pakka::{messages, Actor};
 use tokio::net::UdpSocket;
 
 pub struct ChatUser {

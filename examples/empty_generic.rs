@@ -1,7 +1,10 @@
+use std::fmt;
+
+use pakka::Actor;
 use pakka::messages;
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Test {
     frame: u32
 }
@@ -13,7 +16,7 @@ impl Peb for Test {
     }
 }
 
-pub trait Peb: Send + Sync + Clone + 'static {
+pub trait Peb: Send + Sync + Clone + 'static + fmt::Debug {
     fn update(&mut self) -> u32;
 }
 

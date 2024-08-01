@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::{messages, Interval};
+use pakka::{messages, Actor, Interval};
 
 
 pub struct Test {}
@@ -25,7 +25,7 @@ async fn main() {
             TestTellMessage::Ping()
         )
     );
-    let handle = Test{}.run_with_channels(vec![pinger]);
+    let handle = Test{}.run_with_channels(vec![pinger]);// .run_with_channels(vec![pinger]);
     tokio::time::sleep(Duration::from_secs(2)).await;
     _ = handle.test().await;
     tokio::time::sleep(Duration::from_secs(60)).await;

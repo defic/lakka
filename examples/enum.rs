@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use pakka::{messages, ActorError};
+use pakka::{messages, Actor};
 
 
 #[derive(Debug)]

@@ -3,6 +3,7 @@ use std::fmt;
 use std::mem;
 use std::time::Duration;
 use pakka::messages;
+use pakka::Actor;
 
 
 pub trait Game: fmt::Debug + 'static + Send + Sync + Clone {

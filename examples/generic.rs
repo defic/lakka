@@ -1,7 +1,7 @@
 
 use std::time::Duration;
 
-use pakka::messages;
+use pakka::{messages, Actor};
 
 #[derive(Debug)]
 pub struct Connected;

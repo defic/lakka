@@ -1,5 +1,5 @@
 
-use std::{fmt, future::Future, marker::PhantomData, pin::Pin};
+use std::{any::Any, fmt, future::Future, marker::PhantomData, pin::Pin};
 pub mod channel;
 pub use self::channel::mpsc::*;
 
@@ -15,10 +15,100 @@ pub enum Message<Ask, Tell> {
     Tell(Tell),
 }
 
-pub trait Actor {
+pub trait ActorHandle<T> {
+    fn new(tx: Box<dyn ChannelSender<T>>) -> Self;
+}
+
+pub trait Actor: Sized + Send + 'static {
     type Ask: Send;
     type Tell: Clone + Send;
+    type Handle: ActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
+
+    fn handle_asks(&mut self, msg: Self::Ask, _ctx: &mut ActorContext<Self>) -> impl Future<Output = ()> + Send;
+    fn handle_tells(&mut self, msg: Self::Tell, _ctx: &mut ActorContext<Self>) -> impl Future<Output = ()> + Send;
+
+    fn handle_message(&mut self, msg: Message<Self::Ask, Self::Tell>, mut _ctx: &mut ActorContext<Self>) -> impl Future<Output = ()> + Send {
+        async move {
+            match msg {
+                Message::Ask(ask_msg) => self.handle_asks(ask_msg, &mut _ctx).await,
+                Message::Tell(tell_msg) => self.handle_tells(tell_msg, &mut _ctx).await,
+            }
+        } 
+    }
+
+    fn run(self) -> Self::Handle {
+        self.run_with_channels(vec![])
+    }
+
+    fn run_with_channels(mut self, mut extra_rxs: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>) -> Self::Handle { 
+        let (tx, mut rx) = channel::<<Self as ActorMessage>::Message>(100);
+
+        tokio::spawn(async move {
+            let mut ctx = ActorContext::<Self>{
+                rx: Box::new(rx),
+                extra_rxs: vec![],
+                kill_flag: false, 
+            };
+
+            loop {
+                let mut remove_index: Option<usize> = None;
+                //If we should poll multiple channels
+                if !extra_rxs.is_empty() {
+                    let future = futures::future::select_all(
+                        extra_rxs
+                            .iter_mut()
+                            .map(|channel| channel.recv().boxed()),
+                    );
+
+                    tokio::select! {
+                        msg = ctx.rx.recv() => {
+                            //let mut ctx = pakka::ActorCtx::new(rx);
+                            match msg {
+                                Ok(msg) => self.handle_message(msg, &mut ctx).await,
+                                Err(err) => {
+                                    // The channel has closed, exit the loop
+                                    break;
+                                }
+                            }
+                        },
+                        (result, index, _) = future => {
+                            match result {
+                                Ok(msg) => self.handle_tells(msg, &mut ctx).await,
+                                Err(error) => {
+                                    println!("Channel died, removing index: {}", index);
+                                    remove_index = Some(index);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(index) = remove_index {
+                        println!("Channel died, removing index: {}, length is: {}", index, ctx.extra_rxs.len() );
+                        extra_rxs.remove(index);
+                        println!("Removed, now length {}", ctx.extra_rxs.len() );
+                    }
+                }
+                else {
+                    let msg = ctx.rx.recv().await;
+                    match msg {
+                        Ok(msg) => self.handle_message(msg, &mut ctx).await,
+                        Err(err) => {
+                            // The channel has closed, exit the loop
+                            break;
+                        }
+                    }
+                }
+
+                if ctx.kill_flag {
+                    break;
+                }
+            }
+        });
+
+        Self::Handle::new(Box::new(tx))
+    }
 }
+
+
 
 pub trait ActorMessage: Actor {
     type Message: Send;
@@ -53,10 +143,13 @@ struct GenericActor<T> {
     field: T
 }
 
+/* 
 impl <T> Actor for GenericActor<T> {
     type Ask = Asks;
     type Tell = Tells;
+    type Handle = u8;
 }
+
 
 type Msg<T> = Message<<GenericActor<T> as Actor>::Ask, <GenericActor<T> as Actor>::Tell>;
 
@@ -86,6 +179,7 @@ where
         }
     }
 }
+*/
 
 
 pub enum Asks {
@@ -99,6 +193,7 @@ pub enum Tells {
 }
 struct TestActor {}
 
+/* 
 impl TestActor where TestActor: Actor + ActorMessage {
 
     pub fn solve(msg: <Self as ActorMessage>::Message) {
@@ -123,10 +218,13 @@ impl TestActor where TestActor: Actor + ActorMessage {
     }
 }
 
+
 impl Actor for TestActor {
     type Ask = Asks;
     type Tell = Tells;
+    type Handle = u8;
 }
+    */
 
 pub struct ActorCtx<C, T> 
 where 
@@ -259,8 +357,15 @@ where
     pub sender: S
 }
 
-pub trait ChannelSender<T>: Send + Sync {
+pub trait ChannelSender<T>: Send + Sync + fmt::Debug {
     fn send(&self, msg: T) -> Pin<Box<dyn Future<Output = Result<(), ActorError>> + Send + '_>>;
+    fn clone_box(&self) -> Box<dyn ChannelSender<T>>;
+}
+
+impl <T> Clone for Box<dyn ChannelSender<T>> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
 }
 
 // Implement ChannelSender for tokio::sync::mpsc::Sender
@@ -271,11 +376,17 @@ impl<T: Send + 'static> ChannelSender<T> for mpsc::Sender<T> {
             self.send(msg).await.map_err(|e| e.into())
         })
     }
+
+    fn clone_box(&self) -> Box<dyn ChannelSender<T>> {
+        Box::new(self.clone())
+    }
 }
 
+/*
 pub struct Test<T> {
     sender: Vec<Box<dyn ChannelSender<T>>>
 }
+*/
 
 pub trait Channel<T>: Send {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>>;
