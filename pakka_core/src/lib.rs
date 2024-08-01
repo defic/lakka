@@ -95,7 +95,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let self_ty = &input.self_ty;
 
-    let type_string = quote! { #full_type }.to_string().replace([' ', '<', '>'], "").replace("::", "");
+    let type_string = quote! { #full_type }.to_string().replace([' ', '<', '>', ','], "").replace("::", "");
     let ask_enum_name = format_ident!("{}AskMessage", name);
     let tell_enum_name = format_ident!("{}TellMessage", name);
     let message_name = format_ident!("{}Message", name);
@@ -137,7 +137,7 @@ pub fn messages(_attr: TokenStream, item: TokenStream) -> TokenStream {
         (
             quote! { _phantom: (#(#phantom_types),*), },
             quote! { _phantom: Default::default(), },
-            quote! { _Phantom(#(#phantom_types),*) }
+            quote! { _Phantom((#(#phantom_types),*)) }
         )
     };
 
