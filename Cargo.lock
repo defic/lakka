@@ -72,6 +72,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "duration_helper"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b1e02faa2411a915b73067f17ea0b3ea594464f7d94ad7ebf50e6aadfc7b766"
+
+[[package]]
 name = "futures"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -248,6 +254,7 @@ name = "pakka"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "duration_helper",
  "futures",
  "kanal",
  "pakka_macro",
