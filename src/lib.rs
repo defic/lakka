@@ -40,12 +40,19 @@ pub trait Actor: Sized + Send + 'static {
         self.run_with_channels(vec![])
     }
 
+    fn get_channel() -> (Box<dyn ChannelSender<<Self as ActorMessage>::Message>>, Box<dyn Channel<<Self as ActorMessage>::Message>>) {
+        let (tx, rx) = channel::<<Self as ActorMessage>::Message>(100);
+        // Enable kanal with feature flag
+        // let (tx, rx) = kanal::bounded_async::<<Self as ActorMessage>::Message>(100);
+        (Box::new(tx), Box::new(rx))
+    }
+
     fn run_with_channels(mut self, mut channels: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>) -> Self::Handle { 
-        let (tx, mut rx) = channel::<<Self as ActorMessage>::Message>(100);
+        let (tx, rx) = Self::get_channel();
 
         tokio::spawn(async move {
             let mut ctx = ActorContext::<Self>{
-                rx: Box::new(rx),
+                rx,
                 extra_rxs: vec![],
                 kill_flag: false, 
             };
@@ -109,7 +116,7 @@ pub trait Actor: Sized + Send + 'static {
             }
         });
 
-        Self::Handle::new(Box::new(tx))
+        Self::Handle::new(tx)
     }
 }
 
@@ -383,12 +390,27 @@ impl <T> Clone for Box<dyn ChannelSender<T>> {
     }
 }
 
-// Implement ChannelSender for tokio::sync::mpsc::Sender
 impl<T: Send + 'static> ChannelSender<T> for mpsc::Sender<T> {
     fn send(&self, msg: T) -> Pin<Box<dyn Future<Output = Result<(), ActorError>> + Send + '_>> {
         //let sender = self.clone(); // Clone the sender
         Box::pin(async move {
             self.send(msg).await.map_err(|e| e.into())
+        })
+    }
+
+    fn clone_box(&self) -> Box<dyn ChannelSender<T>> {
+        Box::new(self.clone())
+    }
+}
+
+impl<T: Send + 'static> ChannelSender<T> for kanal::AsyncSender<T> {
+    fn send(&self, msg: T) -> Pin<Box<dyn Future<Output = Result<(), ActorError>> + Send + '_>> {
+        //let sender = self.clone(); // Clone the sender
+        Box::pin(async move {
+            match self.send(msg).await {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ActorError::ActorClosed),
+            }
         })
     }
 
@@ -506,5 +528,15 @@ impl <Message: Send + Clone> Channel<Message> for Interval<Message> {
         
     }
 }
-/* */
+
+impl<T: Send> Channel<T> for kanal::AsyncReceiver<T> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
+        Box::pin(async move {
+            match kanal::AsyncReceiver::recv(self).await {
+                Ok(value) => Ok(value),
+                Err(e) => Err(ActorError::ActorClosed),
+            }
+        })
+    }
+}
 

@@ -34,7 +34,7 @@ impl <T: Peb> Updater<T> {
 
 #[tokio::main]
 async fn main() {
-    //let updater = Updater { peb: Test {frame: 0 }}.run();
+    let _ = Updater { peb: Test {frame: 0 }}.run();
     //let frame = updater.update().await.unwrap();
     //println!("Frame {}", frame)
 }
