@@ -1,36 +1,60 @@
 use std::time::Duration;
 
 use duration_helper::DurationHelper;
-use pakka::{messages, Actor};
+use pakka::{messages, Actor, ActorContext};
+use tokio::time::Instant;
 
 
-struct Looper (tokio::time::Instant);
+///
+/// If actor needs a gameloop with fixed timestep
+/// 
 
-const RATE: Duration = Duration::from_micros(8_330);
-const SLEEP: Duration = Duration::from_micros(6_300);
-const SKIP: Duration = Duration::from_micros(200);
-const SKIP_THRESHOLD: Duration = Duration::from_micros(5_700);
+struct Looper {
+    next_update: tokio::time::Instant,
+    last_frame: tokio::time::Instant,
+}
+
+const RATE: Duration = Duration::from_micros(16_660);
+const SKIP_THRESHOLD: Duration = Duration::from_micros(2_660);
 
 impl Looper {
-    fn update(&mut self) {
-        println!("---- Received tick {:?}", self.0.elapsed());
-        self.0 = tokio::time::Instant::now();
-        
+    fn log_dilation(&mut self, now: Instant) {
+        let dilation_micros = (now.duration_since(self.last_frame).as_micros() as i32) - (RATE.as_micros() as i32);
+        println!("time dilation: {}", dilation_micros);
+    }
+
+    fn update(&mut self, now: Instant) {
+        println!("---- Received tick {:?}", now.duration_since(self.last_frame));
+        self.log_dilation(now);
+        self.last_frame = now;
+        //DO stuff
+    }
+
+    fn schedule_tick(&mut self, _ctx: &mut ActorContext<Self>) {
+        let now = Instant::now();
+        if now < self.next_update {
+            if now < self.next_update - SKIP_THRESHOLD {
+                _ctx.delayed_tell(LooperTellMessage::Tick(), (self.next_update - SKIP_THRESHOLD) - now);
+            }
+            else {
+                _ctx.tell(LooperTellMessage::Tick());
+            }
+        } else {
+            //already too late, scheduling right away
+            _ctx.tell(LooperTellMessage::Tick());
+        }
     }
 }
 
 #[messages]
 impl Looper {
     pub fn tick(&mut self) {
-        
-        if self.0.elapsed() >= RATE {
-            self.update();
-            _ctx.delayed_tell(LooperTellMessage::Tick(), SLEEP);
-        } else if self.0.elapsed() < SKIP_THRESHOLD {
-            _ctx.delayed_tell(LooperTellMessage::Tick(), SKIP);
-        } else {
-            _ctx.tell(LooperTellMessage::Tick());
+        let now = Instant::now();
+        if self.next_update <= now {
+            self.update(now);
+            self.next_update += RATE;
         }
+        self.schedule_tick(_ctx);
     }
 
     pub fn println(&self) {
@@ -40,7 +64,10 @@ impl Looper {
 
 #[tokio::main]
 async fn main(){
-    let handle = Looper(tokio::time::Instant::now()).run();
+    let handle = Looper {
+        next_update: tokio::time::Instant::now() + RATE,
+        last_frame: tokio::time::Instant::now(),
+    }.run();
     _ = handle.tick().await;
     tokio::time::sleep(1.secs()).await;
     _ = handle.println().await;

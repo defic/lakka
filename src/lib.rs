@@ -4,7 +4,8 @@ pub mod channel;
 
 mod channels;
 pub use channels::delayed_message::DelayedMessage;
-use channels::singleshot::Singleshot;
+pub use channels::singleshot::Singleshot;
+pub use channels::interval_channel::{Intervaller, IntervalMessage};
 pub use self::channel::mpsc::*;
 
 
@@ -23,6 +24,8 @@ pub trait ActorHandle<T> {
     fn new(tx: Box<dyn ChannelSender<T>>) -> Self;
 }
 
+type ActorSender<T> = Box<dyn ChannelSender<T>>;
+type ActorReceiver<T> = Box<dyn Channel<T>>;
 pub trait Actor: Sized + Send + 'static {
     type Ask: Send;
     type Tell: Clone + Send + fmt::Debug;
@@ -44,7 +47,7 @@ pub trait Actor: Sized + Send + 'static {
         self.run_with_channels(vec![])
     }
 
-    fn get_channel() -> (Box<dyn ChannelSender<<Self as ActorMessage>::Message>>, Box<dyn Channel<<Self as ActorMessage>::Message>>) {
+    fn get_channel() -> (ActorSender<<Self as ActorMessage>::Message>, ActorReceiver<<Self as ActorMessage>::Message>) {
         let (tx, rx) = channel::<<Self as ActorMessage>::Message>(100);
         // TODO: Enable kanal with feature flag
         // let (tx, rx) = kanal::bounded_async::<<Self as ActorMessage>::Message>(100);
@@ -250,55 +253,6 @@ pub trait Channel<T>: Send {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>>;
 }
 
-
-///
-/// its just tokio::time::sleep, so not very precise
-/// 
-/* 
-pub struct DelayedMessage<T>(Option<T>, std::time::Duration);
-
-impl <T: Send> DelayedMessage<T> {
-    pub fn new(content: T, delay: std::time::Duration) -> Self {
-        Self (Some(content), delay)
-    }
-}
-
-impl<T: Send> Channel<T> for DelayedMessage<T> {
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
-        
-        /* 
-        let res = self.0.take();
-        let res = match res {
-            Some(value) => Ok(value),
-            None => return Box::pin(std::future::ready(Err(ActorError::ActorClosed))),
-        };
-        */
-
-        Box::pin(async move {
-            tokio::time::sleep(self.1).await;
-            let res = self.0.take();
-            let res = match res {
-                Some(value) => Ok(value),
-                None => Err(ActorError::ActorClosed),
-            };
-            res
-        })
-    }
-}
-*/
-
-impl<T: Send> Channel<T> for Option<T> {
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
-        let res = self.take();
-        let res = match res {
-            Some(value) => Ok(value),
-            None => Err(ActorError::ActorClosed),
-        };
-        Box::pin(std::future::ready(res))
-    }
-}
-
-
 impl<T: Send> Channel<T> for mpsc::Receiver<T> {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T, ActorError>> + Send + '_>> {
         Box::pin(async move {
@@ -324,63 +278,6 @@ impl<T: Send + Clone> Channel<T> for broadcast::Receiver<T> {
                 }
             }
         })
-    }
-}
-
-pub trait IntervalCounter {
-    fn set_counter(&mut self, counter: u32);
-}
-
-pub trait ConstructedMessage: fmt::Debug + Clone {
-    type Variant;
-    type Output: Send + Clone;
-    fn create(&self, content: Self) -> Self::Output;
-}
-
-pub struct Interval<T: Send + Clone + IntervalCounter + ConstructedMessage>
-{
-    pub interval: tokio::time::Interval,
-    pub message: T,
-    tick_limit: Option<u32>,
-    pub counter: u32
-}
-
-impl <T: Send + Clone + IntervalCounter + ConstructedMessage> Interval<T>{
-    pub fn new(interval: Duration, message: T) -> Self {
-        Self::new_with_limit(interval, message, None)
-    }
-
-    pub fn new_with_limit(interval: Duration, message: T, tick_limit: Option<u32>) -> Self {
-        let interval = tokio::time::interval(interval);
-        Self {
-            interval,
-            message,
-            tick_limit,
-            counter: 0
-        }
-    }
-
-    pub fn increase_counter(&mut self) {
-        self.counter += 1;
-    }
-}
-
-impl <T: Send + Clone + IntervalCounter + ConstructedMessage> Channel<T::Output> for Interval<T> {
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Result<T::Output, ActorError>> + Send + '_>> {
-        Box::pin(async move {
-
-            if self.tick_limit.map(|limit| self.counter > limit).is_some() {
-                return Err(ActorError::ActorClosed);
-            }
-
-            let _ = self.interval.tick().await;
-
-            let msg = self.message.create(self.message.clone());
-            self.increase_counter();
-            self.message.set_counter(self.counter);
-            Ok(msg)
-        })
-        
     }
 }
 
