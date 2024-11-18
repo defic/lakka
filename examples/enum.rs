@@ -1,14 +1,12 @@
 use std::{error::Error, time::Duration};
 
-use pakka::{messages, Actor};
-
+use pakka::*;
 
 #[derive(Debug)]
 enum State {
     Uuno,
-    Zuumo(u32)
+    Zuumo(u32),
 }
-
 
 #[messages]
 impl State {

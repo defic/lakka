@@ -32,11 +32,57 @@ type UnboundedActorSender<T> = Box<dyn UnboundedChannelSender<T>>;
 type ActorSender<T> = Box<dyn ChannelSender<T>>;
 type ActorReceiver<T> = Box<dyn Channel<T>>;
 
+//impl <T: UnboundedActor> Actor for T {
+pub trait UnboundedActor: Actor {
+    type Handle: UnboundedActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
+
+    fn run(self) -> <Self as UnboundedActor>::Handle {
+        <Self as UnboundedActor>::run_with_channels(self, vec![])
+    }
+
+    fn run_with_channels(
+        self,
+        extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
+    ) -> <Self as UnboundedActor>::Handle {
+        let (tx, rx) = crate::mpsc::unbounded_channel::<<Self as ActorMessage>::Message>();
+        let rx = Box::new(rx);
+        let tx = Box::new(tx);
+        self.run_task(rx, extra_channel_receivers);
+        <Self as UnboundedActor>::Handle::new(tx)
+    }
+}
+
+pub trait BoundedActor: Actor {
+    type Handle: ActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
+
+    fn run(self) -> <Self as BoundedActor>::Handle {
+        self.run_bounded(100, vec![])
+    }
+
+    fn run_with_channels(
+        self,
+        extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
+    ) -> <Self as BoundedActor>::Handle {
+        self.run_bounded(100, extra_channel_receivers)
+    }
+
+    fn run_bounded(
+        self,
+        limit: usize,
+        extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
+    ) -> <Self as BoundedActor>::Handle {
+        let (tx, rx) = crate::mpsc::channel::<<Self as ActorMessage>::Message>(limit);
+        let rx = Box::new(rx);
+        let tx = Box::new(tx);
+        self.run_task(rx, extra_channel_receivers);
+        <Self as BoundedActor>::Handle::new(tx)
+    }
+}
+
 pub trait Actor: Sized + Send + 'static {
     type Ask: Send;
     type Tell: Clone + Send + fmt::Debug;
-    type Handle: ActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
-    type UnboundedHandle: UnboundedActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
+    //type Handle; // ActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
 
     fn handle_asks(
         &mut self,
@@ -62,37 +108,14 @@ pub trait Actor: Sized + Send + 'static {
         }
     }
 
-    fn run(self) -> Self::Handle {
-        self.run_bounded(50)
-    }
-
-    fn run_bounded(self, capacity: usize) -> Self::Handle {
-        //let (tx, rx) = channel::<<Self as ActorMessage>::Message>(100);
-        //self.run_with_channels(Box::new(tx), Box::new(rx), vec![]);
-        self.run_with_channels(vec![])
-    }
-
-    fn run_unbounded(
-        self,
-        extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
-    ) -> Self::UnboundedHandle {
-        let (tx, rx) = crate::mpsc::unbounded_channel::<<Self as ActorMessage>::Message>();
-        let rx = Box::new(rx);
-        let tx = Box::new(tx);
-        self.run_task(rx, extra_channel_receivers);
-        Self::UnboundedHandle::new(tx)
-    }
+    /*
+    fn run(self) -> Self::Handle;
 
     fn run_with_channels(
         self,
         extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
-    ) -> Self::Handle {
-        let (tx, rx) = crate::mpsc::channel::<<Self as ActorMessage>::Message>(100);
-        let rx = Box::new(rx);
-        let tx = Box::new(tx);
-        self.run_task(rx, extra_channel_receivers);
-        Self::Handle::new(tx)
-    }
+    ) -> Self::Handle;
+    */
 
     fn run_task(
         mut self,

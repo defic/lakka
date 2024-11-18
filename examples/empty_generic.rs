@@ -1,7 +1,7 @@
 use std::fmt;
 
 use pakka::messages;
-use pakka::Actor;
+use pakka::*;
 
 #[derive(Clone, Debug)]
 pub struct Test {

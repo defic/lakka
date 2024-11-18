@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::{messages, Actor};
+use pakka::*;
 
 #[derive(Debug, Clone)]
 pub struct Connected;

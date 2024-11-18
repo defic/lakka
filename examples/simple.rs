@@ -1,4 +1,4 @@
-use pakka::{messages, Actor, ActorError};
+use pakka::*;
 use std::time::Duration;
 
 //#[actor]
