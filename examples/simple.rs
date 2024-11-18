@@ -1,6 +1,5 @@
-
-use std::time::Duration;
 use pakka::{messages, Actor, ActorError};
+use std::time::Duration;
 
 //#[actor]
 #[derive(Default)]
@@ -11,7 +10,6 @@ struct SimpleTest {
 
 #[messages]
 impl SimpleTest {
-
     pub fn new() -> Self {
         SimpleTest::default()
     }
@@ -37,17 +35,18 @@ impl SimpleTest {
     }
 
     fn print(&self) {
-        println!("actor print: {}, altered: {} times", self.last_value, self.counter);
+        println!(
+            "actor print: {}, altered: {} times",
+            self.last_value, self.counter
+        );
     }
 }
 
-
 #[tokio::main]
 async fn main() -> Result<(), ActorError> {
-
     //let channel = tokio::sync::mpsc::channel(100);
-    let asd = SimpleTest::new().run();//s(channel);
-    
+    let asd = SimpleTest::new().run(); //s(channel);
+
     asd.set_last_value("innit".into()).await?;
     asd.print().await?;
     asd.set_last_value("monkey".into()).await?;

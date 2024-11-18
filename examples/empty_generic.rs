@@ -1,12 +1,11 @@
 use std::fmt;
 
-use pakka::Actor;
 use pakka::messages;
-
+use pakka::Actor;
 
 #[derive(Clone, Debug)]
 pub struct Test {
-    frame: u32
+    frame: u32,
 }
 
 impl Peb for Test {
@@ -25,16 +24,18 @@ pub struct Updater<T: Peb> {
 }
 
 #[messages]
-impl <T: Peb> Updater<T> {
+impl<T: Peb> Updater<T> {
     fn update(&mut self) -> u32 {
         self.peb.update()
     }
 }
 
-
 #[tokio::main]
 async fn main() {
-    let _ = Updater { peb: Test {frame: 0 }}.run();
+    let _ = Updater {
+        peb: Test { frame: 0 },
+    }
+    .run();
     //let frame = updater.update().await.unwrap();
     //println!("Frame {}", frame)
 }
