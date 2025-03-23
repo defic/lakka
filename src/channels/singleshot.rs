@@ -1,4 +1,8 @@
-use std::{future::Future, pin::Pin, task::{Context, Poll}};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use crate::{ActorError, Channel};
 
@@ -8,9 +12,7 @@ pub struct Singleshot<T> {
 
 impl<T> Singleshot<T> {
     pub fn new(value: T) -> Self {
-        Singleshot {
-            value: Some(value),
-        }
+        Singleshot { value: Some(value) }
     }
 }
 
@@ -22,15 +24,14 @@ impl<T: Send> Channel<T> for Singleshot<T> {
     }
 }
 
-
 struct SingleshotFuture<'a, T> {
     value: &'a mut Option<T>,
 }
 
-impl<'a, T> Future for SingleshotFuture<'a, T> {
+impl<T> Future for SingleshotFuture<'_, T> {
     type Output = Result<T, ActorError>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.value.take() {
             Some(res) => Poll::Ready(Ok(res)),
             None => Poll::Ready(Err(ActorError::ActorClosed)),

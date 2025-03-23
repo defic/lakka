@@ -1,10 +1,7 @@
-
-
-use tokio::sync::oneshot;
-use tokio::time::{Duration, Sleep};
-use std::pin::Pin;
 use std::future::Future;
+use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::time::{Duration, Sleep};
 
 use crate::{ActorError, Channel};
 
@@ -36,7 +33,7 @@ struct DelayedMessageFuture<'a, T> {
     delay: Pin<&'a mut Sleep>,
 }
 
-impl<'a, T> Future for DelayedMessageFuture<'a, T> {
+impl<T> Future for DelayedMessageFuture<'_, T> {
     type Output = Result<T, ActorError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

@@ -82,7 +82,6 @@ pub trait BoundedActor: Actor {
 pub trait Actor: Sized + Send + 'static {
     type Ask: Send;
     type Tell: Clone + Send + fmt::Debug;
-    //type Handle; // ActorHandle<Message<Self::Ask, Self::Tell>> + fmt::Debug;
 
     fn handle_asks(
         &mut self,
@@ -108,15 +107,6 @@ pub trait Actor: Sized + Send + 'static {
         }
     }
 
-    /*
-    fn run(self) -> Self::Handle;
-
-    fn run_with_channels(
-        self,
-        extra_channel_receivers: Vec<Box<dyn Channel<<Self as Actor>::Tell>>>,
-    ) -> Self::Handle;
-    */
-
     fn run_task(
         mut self,
         rx: ActorReceiver<<Self as ActorMessage>::Message>,
@@ -130,7 +120,7 @@ pub trait Actor: Sized + Send + 'static {
             };
 
             loop {
-                // Move any added extra channels to be polled
+                // Move any added extra channels to be polled that have been added in the loop
                 if !ctx.extra_rxs.is_empty() {
                     extra_channel_receivers.append(&mut ctx.extra_rxs);
                 }
@@ -155,7 +145,7 @@ pub trait Actor: Sized + Send + 'static {
                                 }
                             }
                         },
-                        (result, index, _whatsthis) = future => {
+                        (result, index, _) = future => {
 
                             match result {
                                 Ok(msg) => self.handle_tells(msg, &mut ctx).await,
