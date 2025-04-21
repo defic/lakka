@@ -5,7 +5,6 @@ Actor system inspired by Alice Ryhls [Actors with Tokio](https://ryhl.io/blog/ac
 
 ## Installation
 ```bash
-# TODO: the library is not in the registry yet
 cargo add lakka
 ```
 
