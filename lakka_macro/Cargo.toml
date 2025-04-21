@@ -2,6 +2,9 @@
 name = "lakka_macro"
 version = "0.1.0"
 edition = "2021"
+description = "Simple actors with macros, part of lakka crate"
+repository = "https://github.com/defic/lakka"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 lakka_core = { path = "../lakka_core", version = "0.1.0" }

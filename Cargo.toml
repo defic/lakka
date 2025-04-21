@@ -1,12 +1,12 @@
 workspace.members = [ "lakka_core", "lakka_macro"]
 [package]
-name = "lakka"
 edition = "2021"
+name = "lakka"
 description = "Simple actors with macros"
 repository = "https://github.com/defic/lakka"
-version = "0.1.0"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+version = "0.1.0"
 keywords = ["actor"]
 
 [workspace.dependencies]
