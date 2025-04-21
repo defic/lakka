@@ -128,13 +128,13 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote!(ChannelSender)
     };
 
-    let mut actor_type = if unbounded {
+    let actor_type = if unbounded {
         quote!(UnboundedActor)
     } else {
         quote!(BoundedActor)
     };
 
-    let mut handle_type = if unbounded {
+    let handle_type = if unbounded {
         quote!(UnboundedActorHandle)
     } else {
         quote!(ActorHandle)
@@ -301,8 +301,7 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             //let method_clone = method.clone();
             //let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut lakka::ActorCtx<impl lakka::Channel<#module_name::#actor_enum_name #ty_generics>, #module_name::#actor_enum_name #ty_generics>);
-            let new_param: syn::FnArg =
-                syn::parse_quote!(_ctx: &mut lakka::ActorContext<Self>);
+            let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut lakka::ActorContext<Self>);
             method.sig.inputs.push(new_param);
         }
     }
