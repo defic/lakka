@@ -1,4 +1,4 @@
-use pakka::*;
+use lakka::*;
 use std::time::Duration;
 
 //#[actor]

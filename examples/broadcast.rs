@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::*;
+use lakka::*;
 
 struct Broadcaster {
     amount_created: u32,
@@ -20,10 +20,11 @@ impl Broadcaster {
 #[messages]
 impl Broadcaster {
     fn broadcast_msg(&mut self, msg: BroadcastListenerTellMessage) {
+        println!("Receiver count {}", self.broadcast_sender.receiver_count());
         _ = self.broadcast_sender.send(msg);
     }
 
-    fn create_listener(&mut self) -> BroadcastListenerHandle {
+    fn create_broadcast_receiver_actor(&mut self) -> BroadcastListenerHandle {
         self.amount_created += 1;
 
         let ch = Box::new(self.broadcast_sender.subscribe());
@@ -50,27 +51,33 @@ impl BroadcastListener {
 async fn main() -> Result<(), ActorError> {
     let broadcaster = Broadcaster::new().run();
 
-    let listener_handle_1 = broadcaster.create_listener().await?;
-    let listener_handle_2 = broadcaster.create_listener().await?;
-    let listener_handle_3 = broadcaster.create_listener().await?;
+    let listener_handle_1 = broadcaster.create_broadcast_receiver_actor().await?;
+    let listener_handle_2 = broadcaster.create_broadcast_receiver_actor().await?;
+    let listener_handle_3 = broadcaster.create_broadcast_receiver_actor().await?;
 
     listener_handle_3.number(16.0).await?;
     broadcaster
         .broadcast_msg(BroadcastListenerTellMessage::Message(
-            "Hello from broadcaster".into(),
+            "Hello from broadcaster, 3 receivers".into(),
         ))
         .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
     std::mem::drop(listener_handle_1);
 
     broadcaster
-        .broadcast_msg(BroadcastListenerTellMessage::Message("Second hello".into()))
+        .broadcast_msg(BroadcastListenerTellMessage::Message("2 receivers".into()))
         .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
     std::mem::drop(listener_handle_2);
 
     broadcaster
-        .broadcast_msg(BroadcastListenerTellMessage::Message("Third hello".into()))
+        .broadcast_msg(BroadcastListenerTellMessage::Message("1 receiver".into()))
+        .await?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    std::mem::drop(listener_handle_3);
+
+    broadcaster
+        .broadcast_msg(BroadcastListenerTellMessage::Message("No receivers".into()))
         .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 

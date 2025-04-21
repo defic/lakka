@@ -1,4 +1,4 @@
-use pakka::*;
+use lakka::*;
 
 pub struct Test(u16);
 

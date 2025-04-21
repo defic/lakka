@@ -1,4 +1,4 @@
-use pakka::*;
+use lakka::*;
 use std::time::Duration;
 
 #[derive(Default)]
@@ -6,7 +6,7 @@ struct Counter {
     counter: i32,
 }
 
-//Only macro needed to use pakka. Will generate CounterHandle, necessary enums for messages and implement Actor trait etc.
+//Only macro needed to use lakka. Will generate CounterHandle, necessary enums for messages and implement Actor trait etc.
 #[messages]
 impl Counter {
     // modify actor state

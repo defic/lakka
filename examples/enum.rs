@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use pakka::*;
+use lakka::*;
 
 #[derive(Debug)]
 enum State {

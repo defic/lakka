@@ -1,4 +1,4 @@
-use pakka::messages;
+use lakka::messages;
 
 struct Actor;
 
@@ -14,7 +14,7 @@ impl Actor {
 }
 
 #[tokio::main]
-async fn main(){
+async fn main() {
     let _ = Actor;
     //let handle = test.run();
     //_ = handle.test().await;

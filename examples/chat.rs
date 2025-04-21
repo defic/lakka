@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pakka::*;
+use lakka::*;
 
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;

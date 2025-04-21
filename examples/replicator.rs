@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pakka::*;
+use lakka::*;
 use tokio::time::Instant;
 
 pub struct OneOff {

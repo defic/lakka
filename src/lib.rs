@@ -12,7 +12,7 @@ pub use channels::singleshot::Singleshot;
 
 use channel::mpsc;
 use futures::FutureExt;
-pub use pakka_macro::messages;
+pub use lakka_macro::messages;
 use tokio::sync::{broadcast, oneshot};
 
 #[derive(Debug)]
@@ -136,7 +136,7 @@ pub trait Actor: Sized + Send + 'static {
 
                     tokio::select! {
                         msg = ctx.rx.recv() => {
-                            //let mut ctx = pakka::ActorCtx::new(rx);
+                            //let mut ctx = lakka::ActorCtx::new(rx);
                             match msg {
                                 Ok(msg) => self.handle_message(msg, &mut ctx).await,
                                 Err(_) => {

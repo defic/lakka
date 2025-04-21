@@ -1,10 +1,10 @@
 [package]
-name = "pakka_macro"
+name = "lakka_macro"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pakka_core = { path = "../pakka_core" }
+lakka_core = { path = "../lakka_core" }
 syn = { version = "2.0", features = ["full"] }
 
 [lib]

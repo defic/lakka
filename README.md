@@ -1,12 +1,12 @@
-# Pakka Actors
+# Lakka
 
 ## Description
-Actor system inspired by Alice Ryhls [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) blog post, improved with macros to reduce boilerplate and create a more friendlier user experience. The functionality of this library is focused on the actor message ergonomics, and there are no built in actor supervision nor other more sophisticated features.
+Actor system inspired by Alice Ryhls [Actors with Tokio](https://ryhl.io/blog/actors-with-tokio/) blog post, improved with macros to reduce boilerplate and create a more friendlier user experience. The functionality of this library is focused on the actor message ergonomics, and there are no built in actor supervision, support for distributed actors or other more sophisticated features.
 
 ## Installation
 ```bash
 # TODO: the library is not in the registry yet
-cargo add wakka
+cargo add lakka
 ```
 
 ## Usage
@@ -15,14 +15,14 @@ Adding `#[messages]` macro to an impl block will make all the functions with `&s
 
 ```rust
 use std::time::Duration;
-use pakka::*;
+use lakka::*;
 
 #[derive(Default)]
 struct Counter {
     counter: i32,
 }
 
-//Only macro needed to use pakka. Will generate CounterHandle, necessary enums for messages and implement Actor trait etc.
+//Only macro needed to use lakka. Will generate CounterHandle, necessary enums for messages and implement Actor trait etc.
 #[messages]
 impl Counter {
     // modify actor state
@@ -68,18 +68,19 @@ Check the examples for more examples!
 
 ## Behind the scenes
 
-The `#[messages]` actor in the above example generates code to implement pakka::Actor for Counter, `struct CounterHandle`, an `enum CounterAskMessage` with an enum variant for each function that returns a value, and an `enum CounterTellMessage` with a variant for each function that doesn't return a value.
+The `#[messages]` macro in the above example generates code to implement lakka::Actor for Counter, `struct CounterHandle`, an `enum CounterAskMessage` with an enum variant for each function that returns a value, and an `enum CounterTellMessage` with a variant for each function that doesn't return a value.
 
 ```rust
+//Generated code:
 mod counter {
     use super::*;
-    impl pakka::BoundedActor for Counter {
+    impl lakka::BoundedActor for Counter {
         type Handle = CounterHandle;
     }
-    impl pakka::Actor for Counter {
+    impl lakka::Actor for Counter {
         type Ask = CounterAskMessage;
         type Tell = CounterTellMessage;
-        async fn handle_asks(&mut self, msg: Self::Ask, mut _ctx: &mut pakka::ActorContext<Self>) {
+        async fn handle_asks(&mut self, msg: Self::Ask, mut _ctx: &mut lakka::ActorContext<Self>) {
             match msg {
                 CounterAskMessage::Get(resp) => {
                     let result = self.get(&mut _ctx);
@@ -90,7 +91,7 @@ mod counter {
         async fn handle_tells(
             &mut self,
             msg: Self::Tell,
-            mut _ctx: &mut pakka::ActorContext<Self>,
+            mut _ctx: &mut lakka::ActorContext<Self>,
         ) {
             match msg {
                 CounterTellMessage::Inc() => {
@@ -101,25 +102,25 @@ mod counter {
     }
     #[derive(Clone, Debug)]
     pub struct CounterHandle {
-        sender: Box<dyn pakka::ChannelSender<CounterMessage>>,
+        sender: Box<dyn lakka::ChannelSender<CounterMessage>>,
     }
     impl CounterHandle {
-        pub async fn inc(&self) -> Result<(), pakka::ActorError> {
+        pub async fn inc(&self) -> Result<(), lakka::ActorError> {
             self.sender
-                .send(pakka::Message::Tell(CounterTellMessage::Inc()))
+                .send(lakka::Message::Tell(CounterTellMessage::Inc()))
                 .await?;
             Ok(())
         }
-        pub async fn get(&self) -> Result<(i32), pakka::ActorError> {
+        pub async fn get(&self) -> Result<(i32), lakka::ActorError> {
             let (tx, rx) = tokio::sync::oneshot::channel();
             self.sender
-                .send(pakka::Message::Ask(CounterAskMessage::Get(tx)))
+                .send(lakka::Message::Ask(CounterAskMessage::Get(tx)))
                 .await?;
             rx.await.map_err(Into::into)
         }
     }
-    impl pakka::ActorHandle<CounterMessage> for CounterHandle {
-        fn new(tx: Box<dyn pakka::ChannelSender<CounterMessage>>) -> Self {
+    impl lakka::ActorHandle<CounterMessage> for CounterHandle {
+        fn new(tx: Box<dyn lakka::ChannelSender<CounterMessage>>) -> Self {
             Self { sender: tx }
         }
     }
@@ -132,15 +133,15 @@ mod counter {
         Inc(),
     }
     type CounterMessage =
-        pakka::Message<<Counter as pakka::Actor>::Ask, <Counter as pakka::Actor>::Tell>;
+        lakka::Message<<Counter as lakka::Actor>::Ask, <Counter as lakka::Actor>::Tell>;
 }
 pub use counter::*;
 #[allow(dead_code)]
 impl Counter {
-    fn inc(&mut self, _ctx: &mut pakka::ActorContext<Self>) {
+    fn inc(&mut self, _ctx: &mut lakka::ActorContext<Self>) {
         self.counter += 1;
     }
-    fn get(&self, _ctx: &mut pakka::ActorContext<Self>) -> i32 {
+    fn get(&self, _ctx: &mut lakka::ActorContext<Self>) -> i32 {
         self.counter
     }
 }

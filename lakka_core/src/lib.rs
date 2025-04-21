@@ -78,7 +78,7 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
         _ => {
             let error = syn::Error::new(
                 proc_macro2::Span::call_site(),
-                "Invalid attribute parameter. Use #[pakka::messages(unbounded)] or #[pakka::messages] only".to_string(),
+                "Invalid attribute parameter. Use #[lakka::messages(unbounded)] or #[lakka::messages] only".to_string(),
             );
             return error.to_compile_error();
         }
@@ -248,15 +248,15 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
                     handle_methods.extend({
                         if !unbounded {
                             quote! {
-                                pub async fn #method_name(&self #(, #cleaned_args)*) -> Result<(), pakka::ActorError> {
-                                    self.sender.send(pakka::Message::Tell(#tell_enum_name::#variant_name(#handle_args))).await?;
+                                pub async fn #method_name(&self #(, #cleaned_args)*) -> Result<(), lakka::ActorError> {
+                                    self.sender.send(lakka::Message::Tell(#tell_enum_name::#variant_name(#handle_args))).await?;
                                     Ok(())
                                 }
                             }
                         } else {
                             quote! {
-                                pub fn #method_name(&self #(, #unbounded_cleaned_args)*) -> Result<(), pakka::ActorError> {
-                                    self.sender.send(pakka::Message::Tell(#tell_enum_name::#variant_name(#handle_args)))?;
+                                pub fn #method_name(&self #(, #unbounded_cleaned_args)*) -> Result<(), lakka::ActorError> {
+                                    self.sender.send(lakka::Message::Tell(#tell_enum_name::#variant_name(#handle_args)))?;
                                     Ok(())
                                 }
                             }
@@ -280,17 +280,17 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
                     handle_methods.extend({
                         if !unbounded {
                             quote! {
-                                pub async fn #method_name(&self #(, #cleaned_args)*) -> Result<(#ty), pakka::ActorError> {
+                                pub async fn #method_name(&self #(, #cleaned_args)*) -> Result<(#ty), lakka::ActorError> {
                                     let (tx, rx) = tokio::sync::oneshot::channel();
-                                    self.sender.send(pakka::Message::Ask(#ask_enum_name::#variant_name(#handle_args tx))).await?;
+                                    self.sender.send(lakka::Message::Ask(#ask_enum_name::#variant_name(#handle_args tx))).await?;
                                     rx.await.map_err(Into::into)
                                 }
                             }
                         } else {
                             quote! {
-                                pub async fn #method_name(&self #(, #unbounded_cleaned_args)*) -> Result<(#ty), pakka::ActorError> {
+                                pub async fn #method_name(&self #(, #unbounded_cleaned_args)*) -> Result<(#ty), lakka::ActorError> {
                                     let (tx, rx) = tokio::sync::oneshot::channel();
-                                    self.sender.send(pakka::Message::Ask(#ask_enum_name::#variant_name(#handle_args tx)))?;
+                                    self.sender.send(lakka::Message::Ask(#ask_enum_name::#variant_name(#handle_args tx)))?;
                                     rx.await.map_err(Into::into)
                                 }
                             }
@@ -300,8 +300,9 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             //let method_clone = method.clone();
-            //let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut pakka::ActorCtx<impl pakka::Channel<#module_name::#actor_enum_name #ty_generics>, #module_name::#actor_enum_name #ty_generics>);
-            let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut pakka::ActorContext<Self>);
+            //let new_param: syn::FnArg = syn::parse_quote!(_ctx: &mut lakka::ActorCtx<impl lakka::Channel<#module_name::#actor_enum_name #ty_generics>, #module_name::#actor_enum_name #ty_generics>);
+            let new_param: syn::FnArg =
+                syn::parse_quote!(_ctx: &mut lakka::ActorContext<Self>);
             method.sig.inputs.push(new_param);
         }
     }
@@ -333,23 +334,23 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
         mod #module_name {
             use super::*;
 
-            impl #impl_generics pakka::#actor_type for #self_ty {
+            impl #impl_generics lakka::#actor_type for #self_ty {
                 type Handle = #handle_name #type_always;
             }
 
-            impl #impl_generics pakka::Actor for #self_ty {
+            impl #impl_generics lakka::Actor for #self_ty {
                 type Ask = #ask_enum_name #type_always;
                 type Tell = #tell_enum_name #type_always;
                 //type Handle = #handle_name #type_always;
 
-                async fn handle_asks(&mut self, msg: Self::Ask, mut _ctx: &mut pakka::ActorContext<Self>) {
+                async fn handle_asks(&mut self, msg: Self::Ask, mut _ctx: &mut lakka::ActorContext<Self>) {
                     match msg {
                         #ask_handlers
                         #handle_ask_enum_phantom
                     }
                 }
 
-                async fn handle_tells(&mut self, msg: Self::Tell, mut _ctx: &mut pakka::ActorContext<Self>) {
+                async fn handle_tells(&mut self, msg: Self::Tell, mut _ctx: &mut lakka::ActorContext<Self>) {
                     match msg {
                         #tell_handlers
                         #handle_tell_enum_phantom
@@ -359,14 +360,14 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #[derive(Clone, Debug)]
             pub struct #handle_name #impl_generics_over_generic_types #where_clause {
-                sender: Box<dyn pakka::#channel_sender_type<#message_name #ty_generics>>,
+                sender: Box<dyn lakka::#channel_sender_type<#message_name #ty_generics>>,
                 #phantom_field
             }
             impl #impl_generics #handle_name #type_always #where_clause {
                 #handle_methods
             }
-            impl #impl_generics pakka::#handle_type<#message_name #ty_generics> for #handle_name #type_always #where_clause {
-                fn new(tx: Box<dyn pakka::#channel_sender_type<#message_name #ty_generics>>) -> Self {
+            impl #impl_generics lakka::#handle_type<#message_name #ty_generics> for #handle_name #type_always #where_clause {
+                fn new(tx: Box<dyn lakka::#channel_sender_type<#message_name #ty_generics>>) -> Self {
                     Self {
                         sender: tx,
                         #phantom_init
@@ -378,14 +379,14 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
             /*
             #[derive(Clone, Debug)]
             pub struct #unbounded_handle_name #impl_generics_over_generic_types #where_clause {
-                sender: Box<dyn pakka::UnboundedChannelSender<#message_name #ty_generics>>,
+                sender: Box<dyn lakka::UnboundedChannelSender<#message_name #ty_generics>>,
                 #phantom_field
             }
             impl #impl_generics #unbounded_handle_name #type_always #where_clause {
                 #unbounded_handle_methods
             }
-            impl #impl_generics pakka::UnboundedActorHandle<#message_name #ty_generics> for #unbounded_handle_name #type_always #where_clause {
-                fn new(tx: Box<dyn pakka::UnboundedChannelSender<#message_name #ty_generics>>) -> Self {
+            impl #impl_generics lakka::UnboundedActorHandle<#message_name #ty_generics> for #unbounded_handle_name #type_always #where_clause {
+                fn new(tx: Box<dyn lakka::UnboundedChannelSender<#message_name #ty_generics>>) -> Self {
                     Self {
                         sender: tx,
                         #phantom_init
@@ -408,7 +409,7 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #enum_phantom_field
             } #where_clause
 
-            type #message_name #ty_generics = pakka::Message<<#self_ty as pakka::Actor>::Ask, <#self_ty as pakka::Actor>::Tell>;
+            type #message_name #ty_generics = lakka::Message<<#self_ty as lakka::Actor>::Ask, <#self_ty as lakka::Actor>::Tell>;
         }
 
         pub use #module_name::*;

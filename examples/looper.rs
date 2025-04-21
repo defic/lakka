@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use duration_helper::DurationHelper;
-use pakka::*;
+use lakka::*;
 use tokio::time::Instant;
 
 ///

@@ -1,7 +1,7 @@
 use std::fmt;
 
-use pakka::messages;
-use pakka::*;
+use lakka::messages;
+use lakka::*;
 
 #[derive(Clone, Debug)]
 pub struct Test {

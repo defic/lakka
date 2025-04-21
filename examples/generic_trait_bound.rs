@@ -1,5 +1,5 @@
-use pakka::messages;
-use pakka::*;
+use lakka::messages;
+use lakka::*;
 use std::error::Error;
 use std::fmt;
 use std::mem;
