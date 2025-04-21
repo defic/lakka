@@ -1,13 +1,9 @@
 use proc_macro2::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
 use syn::{GenericArgument, ItemImpl, Meta, Path, PathArguments, Type};
 
 use proc_macro2::Span;
 use quote::{format_ident, quote, ToTokens};
-use syn::{
-    parse_quote, FnArg, GenericParam, ImplItem, ItemStruct, Pat, Receiver, WhereClause,
-    WherePredicate,
-};
+use syn::{FnArg, ImplItem, Pat, Receiver};
 
 fn to_pascal_case(s: &str) -> String {
     let mut pascal = String::new();
@@ -327,7 +323,7 @@ pub fn messages(attr: TokenStream, item: TokenStream) -> TokenStream {
     });
      */
 
-    let name_string = name.to_string();
+    let _name_string = name.to_string();
 
     let expanded = quote! {
         mod #module_name {

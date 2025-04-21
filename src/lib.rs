@@ -1,5 +1,5 @@
 use std::future::{ready, Ready};
-use std::{any::Any, fmt, future::Future, marker::PhantomData, pin::Pin, time::Duration};
+use std::{fmt, future::Future, pin::Pin};
 pub mod channel;
 
 //mod actor;
@@ -13,7 +13,7 @@ pub use channels::singleshot::Singleshot;
 use channel::mpsc;
 use futures::FutureExt;
 pub use lakka_macro::messages;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::broadcast;
 
 #[derive(Debug)]
 pub enum Message<Ask, Tell> {
@@ -28,8 +28,8 @@ pub trait UnboundedActorHandle<T> {
     fn new(tx: Box<dyn UnboundedChannelSender<T>>) -> Self;
 }
 
-type UnboundedActorSender<T> = Box<dyn UnboundedChannelSender<T>>;
-type ActorSender<T> = Box<dyn ChannelSender<T>>;
+pub type UnboundedActorSender<T> = Box<dyn UnboundedChannelSender<T>>;
+pub type ActorSender<T> = Box<dyn ChannelSender<T>>;
 type ActorReceiver<T> = Box<dyn Channel<T>>;
 
 //impl <T: UnboundedActor> Actor for T {
@@ -101,8 +101,8 @@ pub trait Actor: Sized + Send + 'static {
     ) -> impl Future<Output = ()> + Send {
         async move {
             match msg {
-                Message::Ask(ask_msg) => self.handle_asks(ask_msg, &mut _ctx).await,
-                Message::Tell(tell_msg) => self.handle_tells(tell_msg, &mut _ctx).await,
+                Message::Ask(ask_msg) => self.handle_asks(ask_msg, _ctx).await,
+                Message::Tell(tell_msg) => self.handle_tells(tell_msg, _ctx).await,
             }
         }
     }
