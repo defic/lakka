@@ -14,8 +14,7 @@ impl OneOff {
         if !self.state {
             self.state = true;
             println!("Processing this the next time: {:?}", Instant::now());
-
-            _ctx.tell(OneOffTellMessage::Process());
+            //_ctx.tell(OneOffTellMessage::Process());
             self.time = Instant::now();
         } else {
             self.state = false;
