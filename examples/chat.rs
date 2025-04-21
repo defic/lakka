@@ -54,7 +54,7 @@ pub struct Message {
 #[messages]
 impl ChatUser {
     async fn chat_send(&self, msg: Message) {
-        let msgbytes = bincode::serialize(&msg).unwrap();
+        let msgbytes = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
         _ = self.sock.send_to(&msgbytes[..], self.addr).await;
     }
 
@@ -99,7 +99,7 @@ impl Chat {
     #[allow(dead_code)]
     async fn broadcast_individually(&self, msg: Message) {
         let d = Instant::now();
-        let msg = bincode::serialize(&msg).unwrap();
+        let msg = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
         let msg = Arc::new(msg);
         for user in &self.users {
             //_ = user.chat_send(msg.clone()).await;
@@ -166,12 +166,14 @@ async fn run_server(server_addr: SocketAddr) {
     let mut buf = [0; 1024];
 
     // With Arc<DashMap> / Rw<HashMap> we could have multiple tasks receiving client messages
+    let config = bincode::config::standard();
     loop {
         match sock.recv_from(&mut buf).await {
             Ok((len, addr)) => {
-                match bincode::deserialize::<Message>(&buf[..len]) {
+                match bincode::serde::decode_from_slice::<Message, _>(&buf[..len], config) {
+                    //bincode::deserialize::<Message>(&buf[..len]) {
                     //match std::str::from_utf8(&buf[..len]) {
-                    Ok(msg) => {
+                    Ok((msg, _)) => {
                         if let Entry::Vacant(entry) = users.entry(addr) {
                             //let first message be the name
 
@@ -201,7 +203,7 @@ async fn client(index: i32, name: String, server_addr: SocketAddr) {
         msg: name.clone(),
         ts: std::time::Instant::now(),
     };
-    let msg = bincode::serialize(&msg).unwrap();
+    let msg = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
     sock.send_to(&msg[..], server_addr).await.unwrap();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -214,7 +216,7 @@ async fn client(index: i32, name: String, server_addr: SocketAddr) {
                 _ = interval.tick() => {
                     if index == 0 {
                         let msg = generate_message(msg_counter);
-                        let msg = bincode::serialize(&msg).unwrap();
+                        let msg = bincode::serde::encode_to_vec(&msg, bincode::config::standard()).unwrap();
                         sock.send_to(&msg[..], server_addr).await.unwrap();
                         msg_counter += 1;
                     }
@@ -239,8 +241,11 @@ async fn client(index: i32, name: String, server_addr: SocketAddr) {
 async fn recv(sock: &UdpSocket) -> Message {
     let mut buf = [0; 1024];
     match sock.recv_from(&mut buf).await {
-        Ok((len, _)) => match bincode::deserialize::<Message>(&buf[..len]) {
-            Ok(msg) => msg,
+        Ok((len, _)) => match bincode::serde::decode_from_slice::<Message, _>(
+            &buf[..len],
+            bincode::config::standard(),
+        ) {
+            Ok((msg, _)) => msg,
             Err(err) => panic!("Failed to deserialize ServerMessage: {err}"),
         },
         Err(e) => {

@@ -20,7 +20,7 @@ impl Looper {
     fn log_dilation(&mut self, now: Instant) {
         let dilation_micros =
             (now.duration_since(self.last_frame).as_micros() as i32) - (RATE.as_micros() as i32);
-        println!("time dilation: {}", dilation_micros);
+        println!("time dilation micros: {}", dilation_micros);
     }
 
     fn update(&mut self, now: Instant) {
